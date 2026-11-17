@@ -22,7 +22,8 @@ Sultan and Terrence Josh Corpuz, advised by Prof. Felino Calderon.
 | PB-11 | Download official forms and references by category (`/resources`) | Public | Done |
 | PB-12 | Online enrollment application with CAPTCHA and rate limit (`/enrollment`) | Public | Done |
 | EN-01 | Repository, hosting, Supabase project and tables | Team | Done |
-| PB-03 / PB-08 / PB-06 | Staff sign-in with role-based dashboards (Admin, Registrar, Teacher) | Staff | Done |
+| PB-08 / PB-06 | Staff sign-in with role-based dashboards (Registrar, Teacher) | Staff | Done |
+| PB-03 | Admin and Academic Coordinator sign-in | Staff | In progress (Admin done; Coordinator role not yet in the system) |
 | PB-05 | Admin: create staff accounts, assign roles, reset passwords, deactivate | Admin | Done |
 | **PB-09** | **Manage Enrollment Application** (search, review, checklist, status, email, print) | Registrar | **Done** |
 | PB-01 | CMS for website content | Admin | Not started |
@@ -132,7 +133,7 @@ Never put secrets in `VITE_` variables, and never commit `.env` or `.env.local`
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm test        # 24 test files, 281 tests
+pnpm test        # 24 test files, 285 tests
 pnpm build
 ```
 
@@ -148,7 +149,7 @@ Base schema: [`supabase/reference/SNCS_Schema_Final.sql`](supabase/reference/SNC
 
 ### Migrations
 
-Applied in filename order. All are applied to the live project except `202611170001_pb07_teacher_schedule.sql` (pending review).
+Applied in filename order. All are applied to the live project.
 
 | Migration | Adds |
 |---|---|
@@ -229,6 +230,7 @@ PR #23 merged into `feat/pb-09-manage-enrollment-application` on 16 Nov 2026.
 |---|---|
 | [backlog-status.md](docs/backlog-status.md) | Status of Gian's backlog items (EN-01, PB-03, PB-07, PB-09) and backlog corrections |
 | [manage-enrollment-application.md](docs/manage-enrollment-application.md) | PB-09 Registrar workflow, acceptance criteria, security, deployment, undo |
+| [registrar-portal-ui.md](docs/registrar-portal-ui.md) | Staff portal bar with the SNCS seal and the Registrar dashboard redesign (UI only) |
 | [pb07-teacher-schedule.md](docs/pb07-teacher-schedule.md) | PB-07 Teacher schedule view, acceptance criteria, deployment, test data |
 | [enrollment-setup.md](docs/enrollment-setup.md) | PB-12 environment variables, Supabase, Turnstile, Vercel |
 | [pb12-enrollment.md](docs/pb12-enrollment.md) | PB-12 implementation and field mapping |
