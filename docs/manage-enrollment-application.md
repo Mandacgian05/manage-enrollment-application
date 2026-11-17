@@ -5,7 +5,7 @@
 | **Backlog item** | PB-09 · Sprint 2 · 8 points · Owner: Gian Mandac |
 | **User stories** | US-09 Manage Enrollment Applications · US-10 Review Application Details · US-11 Update Application Status · US-12 Print Enrollment Application |
 | **Route** | `/registrar` (Registrar dashboard), shown only to an active Registrar account |
-| **Status** | **Done**. Merged in fork PRs #3 and #4 (Nov 16, 2026), team PR #23; live since Nov 16 |
+| **Status** | **Done**. Merged in fork PRs #3 and #4 (Nov 16, 2026), team PR #23; live since Nov 16. UI refreshed in fork PR #7 (Nov 18): see [registrar-portal-ui.md](registrar-portal-ui.md) |
 
 Implements the Registrar side of the use case diagram (`ucd.drawio`).
 
@@ -51,7 +51,10 @@ Implements the Registrar side of the use case diagram (`ucd.drawio`).
 **Tests:** `server/admin-auth-migration.test.ts` (Registrar functions, filters, audit trail,
 table lockdown), `src/components/RegistrarApplicationDetail.test.ts`,
 `src/components/StaffPortalPanels.test.ts`, `src/lib/enrollment/requirements.test.ts`,
-`src/lib/enrollment/print-form.test.ts`.
+`src/lib/enrollment/print-form.test.ts`, `src/views/StaffDashboardView.test.ts`.
+
+**Evidence for the Definition of Done:** team PR #23; fork PRs #3, #4 and #7; the live
+Registrar dashboard; this checklist.
 
 **Suggested backlog updates:** PB-09 → *Done*; add the checklist, remarks, confirmed email
 and "Print A4 Verification Form" to the scope notes; mark US-10 attachment access Post-MVP;
