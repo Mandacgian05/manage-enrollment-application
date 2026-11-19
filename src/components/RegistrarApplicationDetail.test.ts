@@ -7,7 +7,8 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 import RegistrarApplicationDetail from "./RegistrarApplicationDetail.vue";
 
-const client = vi.hoisted(() => ({ rpc: vi.fn(), functions: { invoke: vi.fn() } }));
+const createSignedUrl = vi.hoisted(() => vi.fn());
+const client = vi.hoisted(() => ({ rpc: vi.fn(), functions: { invoke: vi.fn() }, storage: { from: () => ({ createSignedUrl }) } }));
 vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => client }));
 
 const application = {
@@ -124,3 +125,31 @@ it("shows requirement progress and closes from the backdrop", async () => {
     wrapper.unmount();
   }
 });
+
+it("opens an uploaded document through an audited, short-lived link", async () => {
+  const withDocument = { ...structuredClone(application), documents: [
+    { id: 9, document_type: "good-moral", uploaded_at: "2026-11-15T00:00:00Z", content_type: "application/pdf", file_size_bytes: 204800 },
+  ] };
+  client.rpc.mockImplementation(async (name: string) => name === "get_registrar_application"
+    ? { data: withDocument, error: null }
+    : { data: "1/good-moral/0f8fad5b-d9cb-469f-a165-70867728950e.pdf", error: null });
+  createSignedUrl.mockResolvedValue({ data: { signedUrl: "https://storage.example/signed" }, error: null });
+  const tab = { opener: {}, location: { href: "" }, close: vi.fn() };
+  const open = vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
+  const wrapper = mountDetail();
+  try {
+    await flushPromises();
+    expect(wrapper.text()).toContain("Certificate of good moral character");
+    expect(wrapper.text()).toContain("PDF, 200 KB");
+    await wrapper.get(".file-chip").trigger("click");
+    await flushPromises();
+    expect(client.rpc).toHaveBeenCalledWith("record_document_access", { p_reference: "SNCS-TEST01", p_document_id: 9 });
+    expect(createSignedUrl).toHaveBeenCalledWith("1/good-moral/0f8fad5b-d9cb-469f-a165-70867728950e.pdf", 60, undefined);
+    expect(tab.location.href).toBe("https://storage.example/signed");
+    expect(tab.opener).toBeNull();
+  } finally {
+    open.mockRestore();
+    wrapper.unmount();
+  }
+});
+

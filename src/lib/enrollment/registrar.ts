@@ -5,6 +5,7 @@
  * through a role-checked database function; the browser never reads the tables.
  */
 import { getStaffSupabaseClient } from "@/lib/supabase";
+import { documentBucket } from "./documents";
 
 export const applicationStatuses = {
   pending: "Pending",
@@ -31,7 +32,10 @@ export type ApplicationSummary = {
 export type ApplicationFilters = { query: string; status: ApplicationStatus | ""; from: string; to: string };
 
 export type Guardian = { relationship: "father" | "mother" | "guardian"; full_name: string; occupation: string | null; contact_number: string | null };
-export type ApplicationDocument = { id: number; document_type: string; uploaded_at: string };
+export type ApplicationDocument = {
+  id: number; document_type: string; uploaded_at: string;
+  content_type?: "application/pdf" | "image/jpeg" | "image/png" | null; file_size_bytes?: number | null;
+};
 
 export type ApplicationDetail = {
   id: number;
@@ -136,4 +140,20 @@ export async function countApplicationsByStatus(): Promise<Record<ApplicationSta
     // Rows are newest first, so the last row is the oldest on this page.
     return [status, { count: rows.length, more: hasMore, oldest: rows.at(-1)?.submitted_at }];
   })) as Record<ApplicationStatus, StatusCount>;
+}
+
+/**
+ * Open Uploaded Document: the database checks the Registrar, records the access in the
+ * audit log and returns the file's path; storage then signs a link valid for 60 seconds.
+ */
+export async function documentLink(reference: string, document: ApplicationDocument, download: boolean): Promise<string> {
+  const client = getStaffSupabaseClient();
+  const { data: path, error } = await client.rpc("record_document_access", { p_reference: reference, p_document_id: document.id });
+  if (error) throw toRegistrarError(error);
+  if (typeof path !== "string" || !path) throw new RegistrarError("not-found", "Document not found.");
+  const extension = path.split(".").pop() ?? "pdf";
+  const { data, error: signError } = await client.storage.from(documentBucket)
+    .createSignedUrl(path, 60, download ? { download: `${reference}-${document.document_type}.${extension}` } : undefined);
+  if (signError || !data?.signedUrl) throw new RegistrarError("unavailable", "The document could not be opened. Try again.");
+  return data.signedUrl;
 }

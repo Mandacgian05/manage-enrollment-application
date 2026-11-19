@@ -11,9 +11,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
-  applicationStatuses, getApplication, processingStatuses, RegistrarError, sendStatusEmail, setRequirement, updateStatus,
-  type ApplicationDetail, type ProcessingStatus,
+  applicationStatuses, documentLink, getApplication, processingStatuses, RegistrarError, sendStatusEmail, setRequirement, updateStatus,
+  type ApplicationDetail, type ApplicationDocument, type ProcessingStatus,
 } from "@/lib/enrollment/registrar";
+import { formatFileSize } from "@/lib/enrollment/documents";
 import { buildPrintDocument, openPrintableDocument, printDocument } from "@/lib/enrollment/print-form";
 import { requirementsFor, splitChecklist, summarizeChecklist } from "@/lib/enrollment/requirements";
 
@@ -52,6 +53,32 @@ const fullName = computed(() => application.value
 const statusChanged = computed(() => !!application.value && (newStatus.value !== application.value.status
   || newRemarks.value.trim() !== (application.value.registrar_remarks ?? "")));
 const printedAt = ref(new Date());
+
+// Open Uploaded Document START
+const documentsByType = computed(() => Object.fromEntries((application.value?.documents ?? []).map((item) => [item.document_type, item])));
+const requirementLabel = (key: string) => requirements.value.find((item) => item.key === key)?.label ?? key;
+const fileKinds: Record<string, string> = { "application/pdf": "PDF", "image/jpeg": "JPG", "image/png": "PNG" };
+const documentBusy = ref<number>();
+const documentError = ref("");
+async function openDocument(document: ApplicationDocument, download = false) {
+  if (!application.value) return;
+  documentError.value = "";
+  documentBusy.value = document.id;
+  // Open the tab now so pop-up blockers allow it, then point it at the signed link.
+  const tab = download ? null : window.open("", "_blank");
+  try {
+    const url = await documentLink(application.value.reference_no, document, download);
+    if (tab) { tab.opener = null; tab.location.href = url; }
+    else if (download) window.location.assign(url);
+    else documentError.value = "Allow pop-ups for this site to open documents in a new tab.";
+  } catch (error) {
+    tab?.close();
+    documentError.value = error instanceof RegistrarError ? error.message : "The document could not be opened. Try again.";
+  } finally {
+    documentBusy.value = undefined;
+  }
+}
+// Open Uploaded Document END
 const progress = computed(() => checklist.value.required
   ? Math.round((checklist.value.received / checklist.value.required) * 100) : 0);
 const subtitle = computed(() => application.value
@@ -292,13 +319,27 @@ async function openPrintableForm() {
             <section aria-labelledby="documents-heading">
               <h3 id="documents-heading">Attached documents</h3>
               <p v-if="!application.documents.length" class="muted">
-                No documents were uploaded. Online uploads are disabled; the applicant presents requirements at the Registrar’s Office.
+                No documents were uploaded. The applicant presents requirements at the Registrar’s Office.
               </p>
-              <ul v-else class="documents">
-                <li v-for="document in application.documents" :key="document.id">
-                  {{ document.document_type }} <span class="muted">(uploaded {{ dateTime.format(new Date(document.uploaded_at)) }})</span>
-                </li>
-              </ul>
+              <template v-else>
+                <p class="muted small">Uploaded by the applicant. Compare them with the originals before ticking the checklist. Each opening is recorded in the audit log.</p>
+                <p v-if="documentError" class="error" role="alert">{{ documentError }}</p>
+                <ul class="documents">
+                  <li v-for="document in application.documents" :key="document.id" class="document-row">
+                    <span class="document-text">
+                      <strong>{{ requirementLabel(document.document_type) }}</strong>
+                      <span class="muted small">
+                        {{ document.content_type ? fileKinds[document.content_type] : "File" }}<template v-if="document.file_size_bytes">, {{ formatFileSize(document.file_size_bytes) }}</template>,
+                        uploaded {{ dateTime.format(new Date(document.uploaded_at)) }}
+                      </span>
+                    </span>
+                    <span class="row">
+                      <button type="button" class="button-small" :disabled="documentBusy === document.id" @click="openDocument(document)">Open</button>
+                      <button type="button" class="button-small" :disabled="documentBusy === document.id" @click="openDocument(document, true)">Download</button>
+                    </span>
+                  </li>
+                </ul>
+              </template>
             </section>
           </div>
 
@@ -322,6 +363,13 @@ async function openPrintableForm() {
                     />
                     <span>{{ item.label }} <span v-if="item.optional" class="muted">(if applicable)</span></span>
                   </label>
+                  <button
+                    v-if="documentsByType[item.key]"
+                    type="button"
+                    class="file-chip"
+                    :disabled="documentBusy === documentsByType[item.key].id"
+                    @click="openDocument(documentsByType[item.key])"
+                  >File uploaded: open</button>
                 </li>
               </ul>
             </section>
@@ -505,7 +553,13 @@ dd { margin: .1rem 0 0; overflow-wrap: anywhere; }
 .capitalize { text-transform: capitalize; }
 .muted { color: var(--muted); }
 .small { margin: 0; font-size: .88rem; }
-.documents { display: grid; gap: .45rem; margin: 0; padding: 0; list-style: none; }
+.documents { display: grid; gap: .5rem; margin: .6rem 0 0; padding: 0; list-style: none; }
+.document-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.document-text { display: grid; gap: .15rem; min-width: 0; }
+.document-text strong { overflow-wrap: anywhere; }
+.file-chip { margin: 0 0 .3rem 2.2rem; padding: .15rem .6rem; border: 1px solid #c9d8f3; border-radius: 999px; background: var(--review-bg); color: var(--review); font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.file-chip:hover:not(:disabled) { border-color: var(--review); }
+.file-chip:disabled { opacity: .6; cursor: progress; }
 
 .detail-rail { position: sticky; top: 0; display: grid; gap: 1rem; }
 .rail-card { display: grid; gap: .7rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--white); }

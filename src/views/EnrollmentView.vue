@@ -3,8 +3,12 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import EnrollmentCaptcha from '@/components/EnrollmentCaptcha.vue';
 import { ageAt, schoolLevels, sectionsFor, todayInManila, validateApplication, type Application, type FieldErrors } from '@/lib/enrollment/form';
+import { documentBucket, documentFileError, formatFileSize, uploadSlotsFor } from '@/lib/enrollment/documents';
+import { getPublicSupabaseClient } from '@/lib/supabase';
 
-type Config = { status: 'open' | 'closed'; schoolYear: string; siteKey: string; periodId: string | null };
+type Config = { status: 'open' | 'closed'; schoolYear: string; siteKey: string; periodId: string | null; documentUploads?: boolean };
+type UploadTicket = { requirement: string; path: string; token: string; contentType: string; ticket: string };
+type UploadState = { label: string; state: 'waiting' | 'uploading' | 'checking' | 'done' | 'failed'; message?: string };
 const config = ref<Config>();
 const loading = ref(true);
 const message = ref('');
@@ -25,6 +29,85 @@ const submissionId = ref(crypto.randomUUID());
 const errorSummary = ref<HTMLElement>();
 const reviewHeading = ref<HTMLElement>();
 const receiptHeading = ref<HTMLElement>();
+
+// Online Requirement Uploads START
+// Optional: one file per document-type requirement. Files are uploaded only after the
+// application is saved, straight to private storage, then checked by the server.
+const files = reactive<Record<string, File>>({});
+const fileErrors = reactive<Record<string, string>>({});
+const uploads = ref<Record<string, UploadState>>({});
+const uploadsBusy = ref(false);
+const uploadsUnavailable = ref(false);
+const slots = computed(() => (config.value?.documentUploads ? uploadSlotsFor(data) : []));
+const chosenFiles = computed(() => slots.value.filter(slot => files[slot.key]).map(slot => ({ slot, file: files[slot.key] })));
+watch(slots, current => {
+  if (receipt.value) return; // The form is cleared after submission; keep the files for uploading.
+  const keys = new Set(current.map(slot => slot.key));
+  for (const key of Object.keys(files)) if (!keys.has(key)) { delete files[key]; delete fileErrors[key]; }
+});
+function chooseFile(key: string, event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  const problem = documentFileError(file);
+  if (problem) { fileErrors[key] = problem; delete files[key]; return; }
+  delete fileErrors[key];
+  files[key] = file;
+}
+function removeFile(key: string) { delete files[key]; delete fileErrors[key]; }
+
+type PendingFile = { label: string; file: File };
+async function uploadDocuments(tickets: UploadTicket[], pending: Record<string, PendingFile>) {
+  uploads.value = Object.fromEntries(tickets.map(ticket => [ticket.requirement, { label: pending[ticket.requirement]?.label ?? ticket.requirement, state: 'waiting' }]));
+  uploadsBusy.value = true;
+  const sent: UploadTicket[] = [];
+  try {
+    const storage = getPublicSupabaseClient().storage.from(documentBucket);
+    for (const ticket of tickets) {
+      const file = pending[ticket.requirement]?.file;
+      const entry = uploads.value[ticket.requirement];
+      if (!file) { Object.assign(entry, { state: 'failed', message: 'The file was no longer selected.' }); continue; }
+      entry.state = 'uploading';
+      try {
+        const { error } = await storage.uploadToSignedUrl(ticket.path, ticket.token, file, { contentType: ticket.contentType });
+        if (error) throw error;
+        entry.state = 'checking';
+        sent.push(ticket);
+      } catch {
+        Object.assign(entry, { state: 'failed', message: 'The upload did not finish.' });
+      }
+    }
+    if (sent.length) {
+      try {
+        const response = await fetch('/api/enrollment/documents', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickets: sent.map(ticket => ticket.ticket) }), signal: AbortSignal.timeout(120_000),
+        });
+        const result = await response.json();
+        if (!response.ok || !Array.isArray(result.results)) throw new Error();
+        for (const item of result.results as { requirement: string; ok: boolean; message?: string }[]) {
+          const entry = uploads.value[item.requirement];
+          if (entry) Object.assign(entry, item.ok ? { state: 'done', message: undefined } : { state: 'failed', message: item.message });
+        }
+      } catch {
+        for (const ticket of sent) Object.assign(uploads.value[ticket.requirement], { state: 'failed', message: 'The file could not be checked.' });
+      }
+      for (const ticket of sent) {
+        const entry = uploads.value[ticket.requirement];
+        if (entry.state === 'checking') Object.assign(entry, { state: 'failed', message: 'The file could not be checked.' });
+      }
+    }
+  } finally {
+    uploadsBusy.value = false;
+    // Discard the files from the page once they are handled.
+    Object.keys(files).forEach(key => delete files[key]);
+  }
+}
+const uploadLabels: Record<UploadState['state'], string> = {
+  waiting: 'Waiting', uploading: 'Uploading…', checking: 'Checking…', done: 'Received', failed: 'Not received',
+};
+// Online Requirement Uploads END
 
 watch(() => data.level, () => { data.gradeLevel = ''; data.strand = ''; delete errors.value.gradeLevel; delete errors.value.strand; });
 watch(() => data.gradeLevel, () => { data.strand = ''; delete errors.value.strand; });
@@ -81,6 +164,9 @@ async function submit() {
   body.append('application', JSON.stringify({ ...data, periodId: config.value.periodId, privacyConsent: privacyConsent.value }));
   body.append('submissionId', submissionId.value);
   body.append('captchaToken', token.value);
+  if (chosenFiles.value.length) {
+    body.append('documents', JSON.stringify(chosenFiles.value.map(({ slot, file }) => ({ requirement: slot.key, contentType: file.type, size: file.size }))));
+  }
   try {
     const response = await fetch('/api/enrollment/applications', { method: 'POST', body, signal: AbortSignal.timeout(45_000) });
     const result = await response.json();
@@ -93,10 +179,15 @@ async function submit() {
       return;
     }
     if (!result.reference || result.status !== 'Pending') throw new Error();
+    const pending: Record<string, PendingFile> = Object.fromEntries(chosenFiles.value.map(({ slot, file }) => [slot.key, { label: slot.label, file }]));
     receipt.value = result;
+    uploadsUnavailable.value = result.uploadsUnavailable === true && Object.keys(pending).length > 0;
+    const tickets: UploadTicket[] = Array.isArray(result.uploads) ? result.uploads : [];
     // Keep the receipt, discard personal details after confirmed persistence.
     Object.keys(data).forEach(key => delete data[key]);
     await nextTick(); receiptHeading.value?.focus();
+    if (tickets.length) await uploadDocuments(tickets, pending);
+    else Object.keys(files).forEach(key => delete files[key]);
   } catch {
     message.value = 'We could not confirm your submission. Keep this page open and retry with a new security check; your reference will be reused if it was already saved.';
     captcha.value?.reset(); token.value = ''; await focusErrors();
@@ -142,6 +233,19 @@ async function submit() {
         <strong class="receipt-reference">{{ receipt.reference }}</strong>
         <p>Save or take a screenshot of this reference number.</p>
         <p>{{ receipt.message }}</p>
+        <div v-if="Object.keys(uploads).length" class="upload-results" aria-live="polite">
+          <h3>Uploaded documents</h3>
+          <p v-if="uploadsBusy" class="upload-note">Keep this page open while your documents upload.</p>
+          <ul>
+            <li v-for="(entry, key) in uploads" :key="key" :class="['upload-result', entry.state]">
+              <span class="upload-name">{{ entry.label }}</span>
+              <span class="upload-state">{{ uploadLabels[entry.state] }}</span>
+              <small v-if="entry.message">{{ entry.message }} Bring this document to the Registrar’s Office.</small>
+            </li>
+          </ul>
+          <p v-if="!uploadsBusy" class="upload-note">Bring the original documents when you visit the Registrar’s Office so they can be verified.</p>
+        </div>
+        <p v-else-if="uploadsUnavailable" class="upload-note" role="status">Online uploads aren’t available right now. Bring your documents to the Registrar’s Office.</p>
         <RouterLink class="button button-secondary" to="/contact">Registrar contact details</RouterLink>
       </div>
       <div v-else-if="config.status === 'closed'" class="enrollment-notice" role="status">
@@ -178,12 +282,38 @@ async function submit() {
               </div>
             </div>
           </fieldset>
+          <fieldset v-if="slots.length" class="form-section upload-section">
+            <legend><span>{{ String(sections.length + 1).padStart(2, '0') }}</span> Upload documents <small>(optional)</small></legend>
+            <p>Upload a clear scan or photo of any document you already have: PDF, JPG or PNG, up to 10 MB each. You can skip this and bring the documents to the Registrar’s Office instead. Either way, bring the originals for verification.</p>
+            <ul class="upload-slots">
+              <li v-for="slot in slots" :key="slot.key" class="upload-slot">
+                <div class="upload-slot-text">
+                  <label :for="`file-${slot.key}`">{{ slot.label }}</label>
+                  <small v-if="files[slot.key]">{{ files[slot.key].name }} ({{ formatFileSize(files[slot.key].size) }})</small>
+                  <small v-else-if="fileErrors[slot.key]" class="field-error">{{ fileErrors[slot.key] }}</small>
+                  <small v-else>No file chosen</small>
+                </div>
+                <div class="upload-slot-actions">
+                  <label class="button button-edit upload-pick" :for="`file-${slot.key}`">{{ files[slot.key] ? 'Replace' : 'Choose file' }}</label>
+                  <input :id="`file-${slot.key}`" class="upload-input" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" @change="chooseFile(slot.key, $event)" />
+                  <button v-if="files[slot.key]" type="button" class="button button-edit" @click="removeFile(slot.key)">Remove</button>
+                </div>
+              </li>
+            </ul>
+          </fieldset>
           <div class="form-actions"><p>Your details are used to process this application.</p><button class="button button-secondary" type="submit">Review application →</button></div>
         </template>
         <template v-else>
           <div v-for="section in sections" :key="section.title" class="review-section">
             <h3>{{ section.title }}</h3>
             <dl><template v-for="field in section.fields" :key="field.key"><div><dt>{{ field.label }}</dt><dd>{{ (field.key === 'level' ? schoolLevels[data[field.key]]?.label : data[field.key]) || 'Not provided' }}</dd></div></template></dl>
+          </div>
+          <div v-if="slots.length" class="review-section">
+            <h3>Documents to upload</h3>
+            <ul v-if="chosenFiles.length" class="review-files">
+              <li v-for="{ slot, file } in chosenFiles" :key="slot.key"><strong>{{ slot.label }}</strong>: {{ file.name }} ({{ formatFileSize(file.size) }})</li>
+            </ul>
+            <p v-else class="review-files-none">None. You’ll bring your documents to the Registrar’s Office.</p>
           </div>
           <label class="confirmation-check"><input id="confirmation" v-model="confirmed" type="checkbox" :disabled="busy" /> I confirm that the details are accurate and understand that I must visit the Registrar’s Office to continue enrollment.</label>
           <label class="confirmation-check"><input id="privacyConsent" v-model="privacyConsent" type="checkbox" :disabled="busy" :aria-invalid="!!errors.privacyConsent" /> I consent to Sto. Niño Catholic School collecting and using the personal information and documents I provide to process this enrollment application.</label>
@@ -193,6 +323,7 @@ async function submit() {
             <button type="submit" class="button button-secondary" :disabled="busy || !confirmed || !privacyConsent || !token">{{ busy ? 'Submitting…' : 'Submit application' }}</button>
           </div>
           <p v-if="busy" role="status">Please wait while we save your application.</p>
+          <p v-if="chosenFiles.length && !busy" class="upload-note">Your documents upload right after the application is saved.</p>
         </template>
       </form>
     </div>
@@ -250,6 +381,27 @@ async function submit() {
 .captcha-area { min-height: 70px; }
 .receipt-label { font-size: .85rem; color: var(--muted); margin: 2rem 0 .5rem; }
 .receipt-reference { display: block; padding: 1rem; background: var(--cream-100); color: var(--red-800); overflow-wrap: anywhere; font-family: monospace; font-size: 1.15rem; }
+.upload-section small { font-weight: 400; color: var(--muted); }
+.upload-slots { display: grid; gap: .6rem; margin: 0; padding: 0; list-style: none; }
+.upload-slot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem; padding: .8rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: var(--cream-50); }
+.upload-slot-text { display: grid; gap: .2rem; min-width: 0; }
+.upload-slot-text label { font-size: .9rem; font-weight: 700; }
+.upload-slot-text small { overflow-wrap: anywhere; font-size: .8rem; color: var(--muted); }
+.upload-slot-actions { display: flex; gap: .5rem; }
+.upload-pick { min-height: 40px; padding: .5rem .9rem; }
+.upload-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.upload-pick:has(+ .upload-input:focus-visible) { outline: 3px solid var(--gold-500); outline-offset: 3px; }
+.review-files { margin: .5rem 0 0; padding-left: 1.2rem; font-size: .9rem; }
+.review-files li { margin-top: .3rem; overflow-wrap: anywhere; }
+.review-files-none, .upload-note { color: var(--muted); font-size: .9rem; }
+.upload-results { margin: 1.5rem 0; padding: 1rem 1.2rem; border: 1px solid var(--line); background: var(--cream-50); }
+.upload-results h3 { margin: 0 0 .4rem; font-size: 1.05rem; }
+.upload-results ul { display: grid; gap: .5rem; margin: .6rem 0; padding: 0; list-style: none; }
+.upload-result { display: grid; grid-template-columns: 1fr auto; gap: .2rem 1rem; font-size: .9rem; }
+.upload-result small { grid-column: 1 / -1; color: #ad2116; }
+.upload-state { font-weight: 700; color: var(--muted); }
+.upload-result.done .upload-state { color: #2f6b2a; }
+.upload-result.failed .upload-state { color: #ad2116; }
 @media (max-width: 1000px) { .enrollment-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 1.5rem; } }
 @media (max-width: 760px) { .enrollment-layout { grid-template-columns: 1fr; } .enrollment-aside { position: static; } .enrollment-note { display: none; } .enrollment-steps { gap: .8rem; } }
 @media (max-width: 480px) { .form-grid, .review-section dl { grid-template-columns: 1fr; } .form-actions { flex-direction: column; align-items: stretch; } .enrollment-hero { padding: 3rem 0; } }

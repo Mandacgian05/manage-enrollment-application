@@ -19,7 +19,7 @@ describe('enrollment HTTP API', () => {
   });
   it('returns public configuration without credentials', async () => {
     const response = await request(app).get('/api/enrollment/config');
-    expect(response.body).toEqual({ status: 'open', schoolYear: '2026-2027', periodId: '1', siteKey: 'public-key' });
+    expect(response.body).toEqual({ status: 'open', schoolYear: '2026-2027', periodId: '1', siteKey: 'public-key', documentUploads: false });
     expect(response.headers['cache-control']).toBe('no-store');
   });
   it('persists validated Pending applications and returns only a receipt', async () => {
@@ -116,3 +116,64 @@ describe('enrollment HTTP API', () => {
     expect(store.save).not.toHaveBeenCalled();
   });
 });
+
+describe('online requirement uploads', () => {
+  const storage = {
+    applicationByReference: vi.fn(), applicationById: vi.fn(), createUploadUrl: vi.fn(),
+    download: vi.fn(), remove: vi.fn(), record: vi.fn(),
+  };
+  const store: EnrollmentStore = { period: vi.fn(), save: vi.fn(), documents: storage };
+  const verify = vi.fn();
+  const app = createApp(store, verify, { siteKey: 'public-key', ipHashSecret: 'a-long-test-secret', allowedOrigin: 'https://school.example' });
+  const submit = (documents?: unknown) => {
+    const req = request(app).post('/api/enrollment/applications')
+      .field('application', JSON.stringify({ ...validApplication, periodId: '1', privacyConsent: true }))
+      .field('captchaToken', 'valid').field('submissionId', randomUUID());
+    return documents === undefined ? req : req.field('documents', JSON.stringify(documents));
+  };
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(store.period).mockResolvedValue({ status: 'open', schoolYear: '2026-2027', periodId: '1' });
+    vi.mocked(store.save).mockResolvedValue({ reference: 'SNCS-TEST', created: true });
+    verify.mockResolvedValue(true);
+    storage.applicationByReference.mockResolvedValue({ id: '7', status: 'pending' });
+    storage.createUploadUrl.mockResolvedValue('upload-token');
+  });
+
+  it('tells the form that uploads are on', async () => {
+    expect((await request(app).get('/api/enrollment/config')).body.documentUploads).toBe(true);
+  });
+
+  it('returns upload links for listed requirements after saving', async () => {
+    const response = await submit([{ requirement: 'report-card', contentType: 'application/pdf', size: 1000 }]).expect(201);
+    expect(response.body.uploads).toEqual([expect.objectContaining({ requirement: 'report-card', token: 'upload-token', path: expect.stringMatching(/^7\/report-card\/[0-9a-f-]{36}\.pdf$/) })]);
+    expect(response.body.uploadsUnavailable).toBe(false);
+  });
+
+  it('rejects an invalid document list before CAPTCHA or saving', async () => {
+    const response = await submit([{ requirement: 'id-photos', contentType: 'image/png', size: 10 }]).expect(422);
+    expect(response.body.errors.documents).toBeTruthy();
+    expect(verify).not.toHaveBeenCalled(); expect(store.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps the saved application when upload links fail', async () => {
+    storage.createUploadUrl.mockRejectedValue(new Error('bucket missing'));
+    const response = await submit([{ requirement: 'report-card', contentType: 'application/pdf', size: 1000 }]).expect(201);
+    expect(response.body).toMatchObject({ reference: 'SNCS-TEST', uploads: [], uploadsUnavailable: true });
+  });
+
+  it('checks uploaded files only from this site and with a valid body', async () => {
+    await request(app).post('/api/enrollment/documents').set('Origin', 'https://evil.example').send({ tickets: ['x'] }).expect(403);
+    await request(app).post('/api/enrollment/documents').send({ tickets: 'x' }).expect(400);
+    await request(app).post('/api/enrollment/documents').set('Content-Type', 'application/json').send('{"tickets":[' + '"x",'.repeat(5000) + '"x"]}').expect(400);
+    const response = await request(app).post('/api/enrollment/documents').send({ tickets: ['forged.ticket'] }).expect(200);
+    expect(response.body.results).toEqual([expect.objectContaining({ ok: false })]);
+    expect(storage.download).not.toHaveBeenCalled();
+  });
+});
+
+it('turns the document endpoint off when uploads are not enabled', async () => {
+  const app = createApp({ period: vi.fn(), save: vi.fn() }, vi.fn(), { siteKey: 'k', ipHashSecret: 'a-long-test-secret', allowedOrigin: 'https://school.example' });
+  await request(app).post('/api/enrollment/documents').send({ tickets: ['x'] }).expect(404);
+});
+

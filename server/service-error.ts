@@ -6,7 +6,7 @@ const connectionCodes = new Set(['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETI
   'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'CONNECTION_TIMEOUT']);
 export class ServiceError extends Error {
   readonly providerCode: string | undefined;
-  constructor(message: string, code?: unknown, public readonly component?: 'database_connection' | 'database_transaction') {
+  constructor(message: string, code?: unknown, public readonly component?: 'database_connection' | 'database_transaction' | 'documents') {
     super(message);
     this.providerCode = typeof code === 'string' && (/^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/.test(code) || connectionCodes.has(code)) ? code : undefined;
   }
