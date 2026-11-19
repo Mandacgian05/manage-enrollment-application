@@ -38,7 +38,7 @@ describe('Vercel enrollment functions', () => {
   it('serves public configuration through the actual /api entry point', async () => {
     const { default: handler } = await import('../api/enrollment/config');
     const response = await request(handler).get('/api/enrollment/config').expect(200);
-    expect(response.body).toEqual({ status: 'open', schoolYear: '2026-2027', periodId: '1', siteKey: 'public-site-key' });
+    expect(response.body).toEqual({ status: 'open', schoolYear: '2026-2027', periodId: '1', siteKey: 'public-site-key', documentUploads: false });
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.text).not.toContain('server-only');
   });

@@ -369,7 +369,9 @@ async function openPrintableForm() {
                     class="file-chip"
                     :disabled="documentBusy === documentsByType[item.key].id"
                     @click="openDocument(documentsByType[item.key])"
-                  >File uploaded: open</button>
+                  >
+                    File uploaded: open
+                  </button>
                 </li>
               </ul>
             </section>
