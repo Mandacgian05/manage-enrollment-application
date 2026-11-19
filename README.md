@@ -118,7 +118,8 @@ pnpm dev:server                # enrollment + staff API on http://127.0.0.1:3001
 | `DATABASE_URL` | server, **secret** | Supabase transaction pooler connection for saving applications |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | server (secret key is **secret**) | Cloudflare Turnstile CAPTCHA |
 | `TURNSTILE_HOSTNAME`, `APP_ORIGIN` | server | Site hostname and origin allowed to submit |
-| `IP_HASH_SECRET` | server, **secret** | 32+ random characters; hashes IPs for the rate limit |
+| `IP_HASH_SECRET` | server, **secret** | 32+ random characters; hashes IPs for the rate limit and signs document upload tickets |
+| `DOCUMENT_UPLOADS` | server, optional | Set to `enabled` to turn on online requirement uploads (needs migration `202611190001`) |
 
 Never put secrets in `VITE_` variables, and never commit `.env` or `.env.local`
 (both are git-ignored). Full walkthrough: [docs/enrollment-setup.md](docs/enrollment-setup.md).
@@ -161,6 +162,7 @@ Applied in filename order. All are applied to the live project except `202611170
 | `202611140004_sc19_sc30_staff_access.sql` | Live-session checks, password reset, deactivation, audit |
 | `202611160001_manage_enrollment_application.sql` | PB-09: Registrar functions, checklist table, data lockdown |
 | `202611170001_pb07_teacher_schedule.sql` | PB-07: `get_teacher_schedule()`; records the live `rooms`, `room_id`, `is_fixed` |
+| `202611190001_application_document_uploads.sql` | **Not applied yet (awaiting team approval).** Private bucket and Registrar access for online requirement uploads |
 
 Undo for the latest migration: [`supabase/rollback/`](supabase/rollback/). It re-opens
 applicant data to every signed-in account, so use it only in an emergency.
@@ -230,6 +232,7 @@ PR #23 merged into `feat/pb-09-manage-enrollment-application` on 16 Nov 2026.
 | [backlog-status.md](docs/backlog-status.md) | Status of Gian's backlog items (EN-01, PB-03, PB-07, PB-09) and backlog corrections |
 | [manage-enrollment-application.md](docs/manage-enrollment-application.md) | PB-09 Registrar workflow, acceptance criteria, security, deployment, undo |
 | [pb07-teacher-schedule.md](docs/pb07-teacher-schedule.md) | PB-07 Teacher schedule view, acceptance criteria, deployment, test data |
+| [enrollment-document-uploads.md](docs/enrollment-document-uploads.md) | Optional online requirement uploads: flow, safeguards, how to turn on |
 | [enrollment-setup.md](docs/enrollment-setup.md) | PB-12 environment variables, Supabase, Turnstile, Vercel |
 | [pb12-enrollment.md](docs/pb12-enrollment.md) | PB-12 implementation and field mapping |
 | [sc13-login-page.md](docs/sc13-login-page.md) | Staff sign-in and role-based dashboards |
@@ -240,7 +243,9 @@ PR #23 merged into `feat/pb-09-manage-enrollment-application` on 16 Nov 2026.
 
 ## 8. Known limitations
 
-- Applicant document uploads are disabled (post-MVP); requirements are presented onsite.
+- Online requirement uploads are built but switched off until migration `202611190001` is
+  approved and applied and `DOCUMENT_UPLOADS=enabled` is set; until then requirements are
+  presented onsite.
 - The live Vercel project lacks the enrollment server variables (see section 3).
 - Status emails need a Resend-verified sender domain to reach real applicants.
 - The separate `testt` Vercel project uses the same database but older code; its
