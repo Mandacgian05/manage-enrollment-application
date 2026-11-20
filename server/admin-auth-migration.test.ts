@@ -43,6 +43,14 @@ describe("staff authorization migrations", () => {
         $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
       create function auth.jwt() returns jsonb language sql stable as
         $$ select nullif(current_setting('request.jwt.claims', true), '')::jsonb $$;
+      -- Minimal Supabase Storage tables for the document upload migration.
+      create schema storage;
+      create table storage.buckets (id text primary key, name text not null, public boolean default false,
+        file_size_limit bigint, allowed_mime_types text[]);
+      create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text);
+      alter table storage.objects enable row level security;
+      grant usage on schema storage to anon, authenticated;
+      grant select, insert, update, delete on storage.objects to anon, authenticated;
     `);
     const schema = readFileSync(new URL("../supabase/reference/SNCS_Schema_Final.sql", import.meta.url), "utf8");
     await db.exec(schema.slice(schema.indexOf("CREATE TABLE users ("), schema.indexOf("-- 2. WEBSITE CONTENT")));
@@ -53,6 +61,7 @@ describe("staff authorization migrations", () => {
       "202611130001_sc13_admin_auth.sql", "202611140001_sc20_staff_portal_role.sql",
       "202611140002_sc18_manage_staff_accounts.sql", "202611140003_sc21_registrar_application_access.sql",
       "202611140004_sc19_sc30_staff_access.sql", "202611160001_manage_enrollment_application.sql",
+      "202611190001_application_document_uploads.sql",
     ]) {
       await db.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
     }
@@ -263,4 +272,65 @@ describe("staff authorization migrations", () => {
     await expect(asUser(registrarId, "update public.enrollment_applications set status = 'complete'")).rejects.toMatchObject({ code: "42501" });
   });
   // Manage Enrollment Application Tests END
+
+  // Online Requirement Upload Tests START
+  describe("application document uploads", () => {
+    const path = "1/report-card/0f8fad5b-d9cb-469f-a165-70867728950e.pdf";
+
+    it("creates a private bucket that only takes PDF, JPG and PNG up to 10 MB", async () => {
+      expect((await db.query("select public, file_size_limit, allowed_mime_types from storage.buckets where id = 'application-documents'")).rows)
+        .toEqual([{ public: false, file_size_limit: 10485760, allowed_mime_types: ["application/pdf", "image/jpeg", "image/png"] }]);
+    });
+
+    it("accepts only server-shaped document records, one per requirement", async () => {
+      const appId = (await db.query<{ id: number }>("select id from public.enrollment_applications where reference_no = $1", [reference])).rows[0].id;
+      const insert = (type: string, storagePath: string, contentType = "application/pdf", size = 2048) => db.query(
+        "insert into public.application_documents (application_id, document_type, storage_path, content_type, file_size_bytes) values ($1, $2, $3, $4, $5)",
+        [appId, type, storagePath, contentType, size]);
+      for (const [type, storagePath, contentType, size] of [
+        ["report-card", "../etc/passwd", "application/pdf", 2048],
+        ["report-card", "1/report-card/0f8fad5b-d9cb-469f-a165-70867728950e.exe", "application/pdf", 2048],
+        ["Report Card", path, "application/pdf", 2048],
+        ["report-card", path, "application/zip", 2048],
+        ["report-card", path, "application/pdf", 10485761],
+      ] as const) {
+        await expect(insert(type, storagePath, contentType, size)).rejects.toMatchObject({ code: "23514" });
+      }
+      await insert("report-card", path);
+      await expect(insert("report-card", path.replace("0f8fad5b", "1f8fad5b"))).rejects.toMatchObject({ code: "23505" });
+      await db.query("insert into storage.objects (bucket_id, name) values ('application-documents', $1)", [path]);
+    });
+
+    it("lists uploaded documents for the Registrar without exposing the storage path", async () => {
+      const { rows: [{ detail }] } = await asUser<{ detail: { documents: Record<string, unknown>[] } }>(registrarId,
+        "select public.get_registrar_application($1) as detail", [reference]);
+      expect(detail.documents).toEqual([expect.objectContaining({ document_type: "report-card", content_type: "application/pdf", file_size_bytes: 2048 })]);
+      expect(detail.documents[0]).not.toHaveProperty("storage_path");
+    });
+
+    it("returns the file path only to a Registrar and records each opening", async () => {
+      const documentId = (await db.query<{ id: number }>("select id from public.application_documents where storage_path = $1", [path])).rows[0].id;
+      expect((await asUser(registrarId, "select public.record_document_access($1, $2) as path", [reference, documentId])).rows).toEqual([{ path }]);
+      for (const userId of [adminId, teacherId, resetId, ""]) {
+        await expect(asUser(userId, "select public.record_document_access($1, $2)", [reference, documentId])).rejects.toMatchObject({ code: "42501" });
+      }
+      await expect(asUser(registrarId, "select public.record_document_access('SNCS-UNKNOWN', $1)", [documentId])).rejects.toMatchObject({ code: "P0002" });
+      await expect(asUser(registrarId, "select public.record_document_access($1, 999999)", [reference])).rejects.toMatchObject({ code: "P0002" });
+      expect((await db.query("select action, new_value from public.audit_logs where action = 'application.document_view'")).rows)
+        .toEqual([{ action: "application.document_view", new_value: { document_id: documentId, document_type: "report-card" } }]);
+    });
+
+    it("lets only a Registrar read the files and nobody write them from a browser", async () => {
+      expect((await asUser(registrarId, "select name from storage.objects where bucket_id = 'application-documents'")).rows).toEqual([{ name: path }]);
+      for (const userId of [adminId, teacherId, resetId, ""]) {
+        expect((await asUser(userId, "select name from storage.objects where bucket_id = 'application-documents'")).rows).toEqual([]);
+      }
+      await expect(asUser(registrarId, "insert into storage.objects (bucket_id, name) values ('application-documents', 'x/y.pdf')")).rejects.toMatchObject({ code: "42501" });
+      await expect(db.transaction(async (tx) => {
+        await tx.exec("set local role anon");
+        await tx.query("insert into storage.objects (bucket_id, name) values ('application-documents', 'x/y.pdf')");
+      })).rejects.toMatchObject({ code: "42501" });
+    });
+  });
+  // Online Requirement Upload Tests END
 });

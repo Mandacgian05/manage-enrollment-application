@@ -3,8 +3,10 @@ import { Pool } from 'pg';
 import type { EnrollmentStore } from './app.js';
 import { ServiceError } from './service-error.js';
 import { saveEnrollment } from './enrollment-transaction.js';
+import type { DocumentStorage } from './document-uploads.js';
+import { documentBucket } from '../src/lib/enrollment/documents.js';
 
-export function supabaseStore(url: string, serviceKey: string, databaseUrl?: string, sslCa?: string): EnrollmentStore {
+export function supabaseStore(url: string, serviceKey: string, databaseUrl?: string, sslCa?: string, options: { documentUploads?: boolean } = {}): EnrollmentStore {
   const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   let pool: Pool | undefined;
   async function connectDatabase() {
@@ -27,7 +29,49 @@ export function supabaseStore(url: string, serviceKey: string, databaseUrl?: str
       throw new ServiceError('Database connection unavailable', code, 'database_connection');
     }
   }
+  // Online Requirement Uploads START
+  // Uses the server key: storage paths are chosen by the server, and browsers have no write access.
+  const documents: DocumentStorage = {
+    async applicationByReference(reference) {
+      const { data, error } = await db.from('enrollment_applications').select('id::text,status').eq('reference_no', reference).maybeSingle();
+      if (error) throw new ServiceError('Application lookup failed', error.code, 'documents');
+      return data ? { id: String(data.id), status: String(data.status) } : null;
+    },
+    async applicationById(id) {
+      const { data, error } = await db.from('enrollment_applications').select('id::text,status').eq('id', id).maybeSingle();
+      if (error) throw new ServiceError('Application lookup failed', error.code, 'documents');
+      return data ? { id: String(data.id), status: String(data.status) } : null;
+    },
+    async createUploadUrl(path) {
+      const { data, error } = await db.storage.from(documentBucket).createSignedUploadUrl(path);
+      if (error || !data?.token) throw new ServiceError('Upload link unavailable', undefined, 'documents');
+      return data.token;
+    },
+    async download(path) {
+      const { data, error } = await db.storage.from(documentBucket).download(path);
+      if (error || !data) return null;
+      return new Uint8Array(await data.arrayBuffer());
+    },
+    async remove(paths) {
+      if (paths.length) await db.storage.from(documentBucket).remove(paths);
+    },
+    async record({ applicationId, requirement, path, contentType, size }) {
+      const { data: previous, error: readError } = await db.from('application_documents').select('storage_path')
+        .eq('application_id', applicationId).eq('document_type', requirement).maybeSingle();
+      if (readError) throw new ServiceError('Document lookup failed', readError.code, 'documents');
+      const { error } = await db.from('application_documents').upsert({
+        application_id: applicationId, document_type: requirement, storage_path: path,
+        content_type: contentType, file_size_bytes: size, uploaded_at: new Date().toISOString(),
+      }, { onConflict: 'application_id,document_type' });
+      if (error) throw new ServiceError('Document record failed', error.code, 'documents');
+      return { replacedPath: previous?.storage_path ? String(previous.storage_path) : null };
+    },
+  };
+  // Online Requirement Uploads END
+
   return {
+    // Off until the 202611190001 migration is applied and DOCUMENT_UPLOADS=enabled is set.
+    ...(options.documentUploads ? { documents } : {}),
     async period() {
       // Availability uses the existing Supabase API independently of the write connection.
       // A database connection failure must not prevent viewing or completing the form.
