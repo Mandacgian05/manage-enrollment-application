@@ -32,7 +32,8 @@ and the code in this repository. Last updated 17 Nov 2026.
 
 ## PB-09: Done
 See [manage-enrollment-application.md](manage-enrollment-application.md) for every
-acceptance criterion. One criterion is Post-MVP: opening attachments (applicant uploads are disabled).
+acceptance criterion. The Registrar screens were redesigned on Nov 18 (UI only, fork PR #7):
+see [registrar-portal-ui.md](registrar-portal-ui.md). One criterion is Post-MVP: opening attachments (applicant uploads are disabled).
 
 ## PB-07: Built
 See [pb07-teacher-schedule.md](pb07-teacher-schedule.md). The Teacher dashboard shows the
