@@ -267,7 +267,7 @@ describe("staff authorization (ERD v12 schema)", () => {
     expect(await visible()).toEqual([]);
     await expect(asUser(contentAdminId, "select public.cms_delete('content', 999)")).rejects.toMatchObject({ code: "P0002" });
     await asUser(contentAdminId, "select public.cms_delete('content', $1)", [id]);
-    expect((await db.query(`select "action" from public."auditLogs" where "entityType" = 'cmsContent' order by "auditLogId"`)).rows.map((row) => row.action))
+    expect((await db.query<{ action: string }>(`select "action" from public."auditLogs" where "entityType" = 'cmsContent' order by "auditLogId"`)).rows.map((row) => row.action))
       .toEqual(["cms.create", "cms.status", "cms.trash", "cms.delete"]);
   });
   // Manage Website Content Tests END
