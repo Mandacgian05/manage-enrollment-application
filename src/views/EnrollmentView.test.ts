@@ -83,9 +83,10 @@ describe('enrollment applicant workflow', () => {
   it('applies field-specific limits and validates names, optional emails and addresses on blur', async () => {
     await render();
     expect(wrapper.get('#firstName').attributes('maxlength')).toBe('100');
-    expect(wrapper.get('#guardianFullName').attributes('maxlength')).toBe('150');
-    expect(wrapper.get('#address').attributes('maxlength')).toBe('1000');
-    for (const [key, value] of [['firstName', 'Test123'], ['parentEmail', 'a@-example.com'], ['address', '---']]) {
+    expect(wrapper.get('#guardianLastName').attributes('maxlength')).toBe('100');
+    expect(wrapper.get('#houseStreet').attributes('maxlength')).toBe('150');
+    expect(wrapper.get('#zipCode').attributes('maxlength')).toBe('4');
+    for (const [key, value] of [['firstName', 'Test123'], ['parentEmail', 'a@-example.com'], ['houseStreet', '---'], ['zipCode', '12ab']]) {
       await wrapper.get(`#${key}`).setValue(value); await wrapper.get(`#${key}`).trigger('blur');
       expect(wrapper.get(`#${key}`).attributes('aria-invalid')).toBe('true');
     }

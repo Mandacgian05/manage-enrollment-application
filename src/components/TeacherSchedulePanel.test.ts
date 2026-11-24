@@ -12,17 +12,17 @@ const client = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => client }));
 
 const entry = (overrides: Partial<ScheduleEntry>): ScheduleEntry => ({
-  day_of_week: 1, start_time: "08:00", end_time: "09:00", subject: "Filipino 7", section: "G7 - Our Lady of Guadalupe",
-  grade_level: 7, strand: null, room: "Room 201", is_fixed: false, ...overrides,
+  dayOfWeek: 1, startTime: "08:00", endTime: "09:00", subject: "Filipino 7", section: "G7 - Our Lady of Guadalupe",
+  gradeLevel: "Grade 7", strands: null, room: "Room 201", isFixed: false, ...overrides,
 });
 const published = {
-  linked: true, teacher_name: "Teacher A",
-  run: { school_year: "2026-2027", term: "Term 2", published_at: "2026-11-10T00:00:00Z" },
+  linked: true, teacherName: "Teacher A",
+  run: { schoolYearStart: 2026, schoolYearEnd: 2027, term: "Term 2", publishedAt: "2026-11-10T00:00:00Z" },
   entries: [
     entry({}),
-    entry({ day_of_week: 3, start_time: "13:00", end_time: "14:00", subject: "General Chemistry 1", section: "G11 - St. Thomas",
-      grade_level: 11, strand: "STEM", room: "Chemistry Lab", is_fixed: true }),
-    entry({ day_of_week: 3, start_time: "15:00", end_time: "15:45", subject: "Homeroom", room: null }),
+    entry({ dayOfWeek: 3, startTime: "13:00", endTime: "14:00", subject: "General Chemistry 1", section: "G11 - St. Thomas",
+      gradeLevel: "Grade 11", strands: "STEM", room: "Chemistry Lab", isFixed: true }),
+    entry({ dayOfWeek: 3, startTime: "15:00", endTime: "15:45", subject: "Homeroom", room: null }),
   ],
 };
 
@@ -43,7 +43,7 @@ describe("schedule helpers", () => {
     const groups = groupByDay(published.entries);
     expect(groups.map((group) => group.name)).toEqual(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
     expect(groups[2].entries.map((item) => item.subject)).toEqual(["General Chemistry 1", "Homeroom"]);
-    expect(groupByDay([entry({ day_of_week: 6 })]).at(-1)?.name).toBe("Saturday");
+    expect(groupByDay([entry({ dayOfWeek: 6 })]).at(-1)?.name).toBe("Saturday");
     expect(weeklyMinutes(published.entries)).toBe(165);
   });
 });
@@ -83,7 +83,7 @@ describe("TeacherSchedulePanel", () => {
   });
 
   it.each([
-    [{ linked: true, teacher_name: "Teacher A", run: null, entries: [] }, "No active classes found."],
+    [{ linked: true, teacherName: "Teacher A", run: null, entries: [] }, "No active classes found."],
     [{ linked: false, run: null, entries: [] }, "not linked to a teacher record"],
   ])("explains an empty schedule", async (data, message) => {
     client.rpc.mockResolvedValue({ data, error: null });

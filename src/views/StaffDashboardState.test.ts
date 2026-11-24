@@ -21,7 +21,7 @@ vi.mock("vue-router", () => ({ RouterLink: { template: "<a><slot /></a>" }, useR
 
 let dashboard: VueWrapper;
 let currentRole: string;
-const account = { id: "2", full_name: "Test Teacher", email: "teacher@example.com", role: "teacher", account_status: "active" };
+const account = { userId: "2", firstName: "Test", middleName: null, lastName: "Teacher", suffix: null, email: "teacher@example.com", role: "teacher", adminType: null, status: "active" };
 
 function emit(event: AuthChangeEvent, userId = "admin-id") {
   const session = { access_token: "test-token", expires_at: Date.now() / 1000 + 3600, user: { id: userId } };
@@ -37,7 +37,8 @@ beforeEach(async () => {
   currentRole = "admin";
   client.auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
   client.rpc.mockImplementation(async (name: string) => ({
-    data: name === "get_staff_portal_role" ? currentRole : [account], error: null,
+    data: name === "get_staff_portal_role" ? currentRole
+      : name === "get_admin_access" ? { adminType: "superAdmin", manageAccounts: true, manageContent: true } : [account], error: null,
   }));
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
     ok: true, json: async () => ({ temporaryPassword: "new-temporary-password" }),

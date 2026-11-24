@@ -12,11 +12,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import StaffDashboardView from "./StaffDashboardView.vue";
 import type { StaffRole } from "@/lib/staff-auth";
 
-const { onAuthStateChange, getStaffPortalRole, accountAccess, showView } = vi.hoisted(() => ({
-  onAuthStateChange: vi.fn(), getStaffPortalRole: vi.fn(), accountAccess: { value: true as boolean | undefined }, showView: vi.fn(),
+const { onAuthStateChange, getStaffPortalRole, accountAccess, adminAccess, showView } = vi.hoisted(() => ({
+  onAuthStateChange: vi.fn(), getStaffPortalRole: vi.fn(), accountAccess: { value: true as boolean | undefined },
+  adminAccess: { value: { adminType: "superAdmin", manageAccounts: true, manageContent: true } as Record<string, unknown> | null },
+  showView: vi.fn(),
 }));
 vi.mock("@/lib/staff-auth", () => ({ getStaffPortalRole }));
-vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => ({ auth: { onAuthStateChange, signOut: vi.fn() } }) }));
+// get_admin_access tells the dashboard which kind of Admin is signed in.
+vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => ({
+  auth: { onAuthStateChange, signOut: vi.fn() },
+  rpc: async () => ({ data: adminAccess.value, error: null }),
+}) }));
 vi.mock("vue-router", () => ({ RouterLink: { props: ["to"], template: "<a><slot /></a>" }, useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/lib/cms/config", () => ({ cmsPreviewEnabled: true }));
 vi.mock("@/components/RegistrarApplicationsPanel.vue", () => ({ default: { template: "<div>applications</div>" } }));
@@ -65,6 +71,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   accountAccess.value = true;
+  adminAccess.value = { adminType: "superAdmin", manageAccounts: true, manageContent: true };
   onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
 });
 
@@ -81,8 +88,17 @@ it("gives a Super Admin account management and every website section", async () 
   expect(dashboard!.get('[data-testid="staff-list"]').isVisible()).toBe(true);
 });
 
+it("gives an Account Admin account management only", async () => {
+  adminAccess.value = { adminType: "accountAdmin", manageAccounts: true, manageContent: false };
+  await open("admin", "Admin dashboard");
+  expect(navLabels()).toEqual(["Overview", "Staff accounts", "Create account"]);
+  expect(dashboard!.get(".portal-user-role").text()).toBe("Account Admin");
+  expect(dashboard!.text()).not.toContain("Open content workspace");
+});
+
 it("gives a Content Admin the website sections only and hides the staff list", async () => {
   accountAccess.value = false;
+  adminAccess.value = { adminType: "contentAdmin", manageAccounts: false, manageContent: true };
   await open("admin", "Admin dashboard");
   expect(navLabels()).toEqual(["Overview", "All content", "Announcements", "Events", "Pages", "PDF resources"]);
   expect(dashboard!.get(".portal-user-role").text()).toBe("Content Admin");

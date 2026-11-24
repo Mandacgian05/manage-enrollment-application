@@ -40,7 +40,7 @@ describe('registration form validation', () => {
     for (const value of ['0917123456', '091712345678', '08171234567', '+639171234567', '09abcdefghi', '0917 1234567', '09171234567,09981234567']) {
       expect(validateApplication({ ...validApplication, [key]: value }, '2026-2027').errors).toHaveProperty(key);
     }
-    expect(validateApplication({ ...validApplication, fatherFullName: 'Father Example', motherFullName: 'Mother Example', [key]: '09981234567' }, '2026-2027').errors).toEqual({});
+    expect(validateApplication({ ...validApplication, fatherLastName: 'Example', fatherFirstName: 'Father', motherLastName: 'Example', motherFirstName: 'Mother', [key]: '09981234567' }, '2026-2027').errors).toEqual({});
   });
   it('accepts names with accents, initials, apostrophes and hyphens, and rejects numbers and markup', () => {
     for (const name of ['Ma. Niño', "O'Connor", 'Dela-Cruz', 'José', '李明', 'De la Peña III']) {
@@ -61,21 +61,26 @@ describe('registration form validation', () => {
     }
     expect(validateApplication({ ...validApplication, email: 'student+enrollment@example.com' }, '2026-2027').errors).toEqual({});
   });
-  it('rejects invisible controls and symbol-only text, but allows multiline addresses', () => {
-    expect(validateApplication({ ...validApplication, messenger: 'Example\u0000Guardian', religion: '---' }, '2026-2027').errors)
-      .toMatchObject({ messenger: expect.any(String), religion: expect.any(String) });
-    expect(validateApplication({ ...validApplication, address: '123 Main Street\nTaguig City' }, '2026-2027').errors).toEqual({});
+  it('rejects invisible controls and symbol-only text, and checks the ZIP code and suffix', () => {
+    expect(validateApplication({ ...validApplication, guardianMessenger: 'Example\u0000Guardian', religion: '---' }, '2026-2027').errors)
+      .toMatchObject({ guardianMessenger: expect.any(String), religion: expect.any(String) });
+    expect(validateApplication({ ...validApplication, zipCode: '12a4' }, '2026-2027').errors).toHaveProperty('zipCode');
+    expect(validateApplication({ ...validApplication, suffix: 'Jr.', zipCode: '' }, '2026-2027').errors).toEqual({});
+    expect(validateApplication({ ...validApplication, suffix: 'Jr. 2' }, '2026-2027').errors).toHaveProperty('suffix');
   });
   it('rejects inherited object keys as grade choices without crashing', () => {
     expect(validateApplication({ ...validApplication, level: 'SHS', gradeLevel: 'constructor', strand: 'forged' }, '2026-2027').errors)
       .toMatchObject({ gradeLevel: expect.any(String), strand: expect.any(String) });
   });
-  it('requires the schema-required fields and the full name of any supplied guardian', () => {
-    const result = validateApplication({ ...validApplication, religion: '', messenger: '', fatherOccupation: 'Teacher' }, '2026-2027');
-    expect(Object.keys(result.errors)).toEqual(expect.arrayContaining(['religion', 'messenger', 'fatherFullName']));
-    expect(validateApplication({ ...validApplication, guardianFullName: '', guardianContact: '', previousAddress: '' }, '2026-2027').errors).toEqual({});
+  it('requires the schema-required fields, split address, and the name of any supplied parent or guardian', () => {
+    const result = validateApplication({ ...validApplication, religion: '', barangay: '', fatherOccupation: 'Teacher' }, '2026-2027');
+    expect(Object.keys(result.errors)).toEqual(expect.arrayContaining(['religion', 'barangay', 'fatherLastName', 'fatherFirstName']));
+    const noMessenger = validateApplication({ ...validApplication, guardianMessenger: '' }, '2026-2027').errors;
+    expect(noMessenger).toEqual({ guardianMessenger: 'Give an active Messenger account for at least one parent or guardian.' });
+    expect(validateApplication({ ...validApplication, guardianLastName: '', guardianFirstName: '', guardianContact: '', guardianMessenger: '',
+      motherLastName: 'Example', motherFirstName: 'Mother', motherMessenger: 'mother.example', previousSchoolCity: '' }, '2026-2027').errors).toEqual({});
     // The former school is optional only when the checklist needs nothing from it (old students, pre-school).
-    expect(validateApplication({ ...validApplication, studentStatus: 'Old', previousSchool: '', previousAddress: '' }, '2026-2027').errors).toEqual({});
+    expect(validateApplication({ ...validApplication, studentStatus: 'Old', previousSchool: '', previousSchoolCity: '', previousSchoolProvince: '' }, '2026-2027').errors).toEqual({});
     expect(validateApplication({ ...validApplication, previousSchool: '' }, '2026-2027').errors).toEqual({ previousSchool: 'Former school’s name is required.' });
   });
   it('handles birthdays, leap dates and future dates', () => {
@@ -86,8 +91,11 @@ describe('registration form validation', () => {
   });
   it('collects only fields supported by the supplied schema plus derived age/year', () => {
     const keys = sectionsFor({ level: 'JHS' }).flatMap(s => s.fields.map(f => f.key));
-    expect(keys).toHaveLength(29);
-    expect(sectionsFor({ level: 'SHS' }).flatMap(s => s.fields)).toHaveLength(30);
+    expect(keys).toHaveLength(49);
+    expect(sectionsFor({ level: 'SHS' }).flatMap(s => s.fields)).toHaveLength(50);
+    for (const key of ['houseStreet', 'barangay', 'cityMunicipality', 'province', 'zipCode', 'suffix', 'secondaryContact',
+      'fatherLastName', 'motherFirstName', 'guardianMessenger', 'previousSchoolCity', 'previousSchoolProvince']) expect(keys).toContain(key);
+    for (const key of ['address', 'messenger', 'fatherFullName', 'previousAddress']) expect(keys).not.toContain(key);
     for (const key of ['siblings', 'fatherOfficeAddress', 'guardianRelation', 'previousGrade', 'adviser']) expect(keys).not.toContain(key);
   });
   it('limits file size, extension and MIME type', () => {

@@ -11,14 +11,16 @@ const client = vi.hoisted(() => ({ rpc: vi.fn(), functions: { invoke: vi.fn() } 
 vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => client }));
 
 const application = {
-  id: 1, reference_no: "SNCS-TEST01", school_year: "2026-2027", department: "jhs", applicant_type: "new",
-  grade_level: "Grade 7", strand: null, mode_of_payment: "monthly", surname: "Example", first_name: "Test",
-  middle_name: null, birth_date: "2013-01-15", gender: "female", place_of_birth: "Taguig", religion: "Catholic",
-  complete_address: "Test address", contact_numbers: "09171234567", email: "test@example.com", parent_email: null,
-  guardian_messenger: "Example Guardian", last_school_name: "Example School", last_school_address: "Test school address",
-  status: "pending", registrar_remarks: null, privacy_consent_at: "2026-11-14T00:00:00Z", submitted_at: "2026-11-14T00:00:00Z",
-  guardians: [{ relationship: "guardian", full_name: "Guardian Example", occupation: null, contact_number: "09171234567" }],
-  documents: [], requirement_checks: { "psa-birth-certificate": true },
+  applicationId: 1, referenceNo: "SNCS-TEST01", schoolYearStart: 2026, schoolYearEnd: 2027, department: "jhs", applicantType: "new",
+  gradeLevel: "Grade 7", strandCode: null, paymentMode: "monthly", lastName: "Example", firstName: "Test",
+  middleName: null, suffix: null, birthDate: "2013-01-15", sex: "female", birthPlace: "Taguig", religion: "Catholic",
+  houseStreet: "12 Test Street", barangay: "Test Barangay", cityMunicipality: "Taguig", province: "Metro Manila", zipCode: "1630",
+  primaryContactNumber: "09171234567", secondaryContactNumber: null, email: "test@example.com", parentEmail: null,
+  lastSchoolName: "Example School", lastSchoolCityMunicipality: "Pasig", lastSchoolProvince: "Metro Manila",
+  status: "pending", registrarRemarks: null, privacyConsentAt: "2026-11-14T00:00:00Z", submittedAt: "2026-11-14T00:00:00Z",
+  guardians: [{ relationship: "guardian", lastName: "Example", firstName: "Guardian", middleName: null, suffix: null,
+    occupation: null, contactNumber: "09171234567", email: null, messengerAccount: "example.guardian" }],
+  documents: [], requirementChecks: { "psa-birth-certificate": true },
 };
 
 function mountDetail() {
@@ -33,7 +35,7 @@ it("shows every submitted section and the dynamic checklist", async () => {
   try {
     await flushPromises();
     expect(client.rpc).toHaveBeenCalledWith("get_registrar_application", { p_reference: "SNCS-TEST01" });
-    for (const text of ["Guardian Example", "Taguig", "Example School", "Messenger account", "Good moral", "Baptismal certificate", "Former school’s name", "No documents were uploaded"]) {
+    for (const text of ["Guardian Example", "12 Test Street, Test Barangay, Taguig, Metro Manila 1630", "Example School", "Pasig, Metro Manila", "example.guardian", "Good moral", "Baptismal certificate", "Former school’s name", "No documents were uploaded"]) {
       expect(wrapper.text().toLowerCase()).toContain(text.toLowerCase());
     }
     expect(wrapper.find<HTMLInputElement>('.checklist input[type="checkbox"]').element.checked).toBe(false);
@@ -57,7 +59,7 @@ it("shows application not found for an unknown reference", async () => {
 it("saves a status only after confirmation and emails only after the Registrar confirms the preview", async () => {
   client.rpc.mockImplementation(async (name: string) => name === "get_registrar_application"
     ? { data: structuredClone(application), error: null }
-    : { data: { status: "incomplete", registrar_remarks: "Bring the report card", changed: true }, error: null });
+    : { data: { status: "incomplete", registrarRemarks: "Bring the report card", changed: true }, error: null });
   client.functions.invoke.mockResolvedValue({ data: { success: true }, error: null });
   const wrapper = mountDetail();
   try {
@@ -85,7 +87,7 @@ it("saves a status only after confirmation and emails only after the Registrar c
     expect(wrapper.get(".email-preview").text()).toContain("Bring the report card");
     await wrapper.findAll("button").find((button) => button.text() === "Confirm and send email")!.trigger("click");
     await flushPromises();
-    expect(client.functions.invoke).toHaveBeenCalledWith("send-application-status-email", { body: { reference_no: "SNCS-TEST01" } });
+    expect(client.functions.invoke).toHaveBeenCalledWith("send-application-status-email", { body: { referenceNo: "SNCS-TEST01" } });
     expect(wrapper.text()).toContain("Status email sent to test@example.com");
   } finally {
     wrapper.unmount();
@@ -95,7 +97,7 @@ it("saves a status only after confirmation and emails only after the Registrar c
 it("lets the Registrar decline the status email", async () => {
   client.rpc.mockImplementation(async (name: string) => name === "get_registrar_application"
     ? { data: structuredClone(application), error: null }
-    : { data: { status: "for_review", registrar_remarks: null, changed: true }, error: null });
+    : { data: { status: "for_review", registrarRemarks: null, changed: true }, error: null });
   const wrapper = mountDetail();
   try {
     await flushPromises();

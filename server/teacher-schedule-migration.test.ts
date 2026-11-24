@@ -35,8 +35,8 @@ describe("teacher schedule (ERD v12 schema)", () => {
         ('admin@example.com', 'Test', 'Admin', 'admin', 'superAdmin', $5)`, ids);
     await db.exec(`
       insert into public."teachers" ("userId", "employeeNumber", "department", "employmentStatus", "dateHired", "highestDegree", "degreeMajor")
-        select "userId", 'T01', 'jhs', 'regular', '2020-06-01', 'BSEd', 'Filipino' from public."users" where "email" = 'a@example.com'
-        union all select "userId", 'T02', 'jhs', 'regular', '2021-06-01', 'BSEd', 'Mathematics' from public."users" where "email" = 'b@example.com';
+        select "userId", 'T01', 'jhs', 'regular', date '2020-06-01', 'BSEd', 'Filipino' from public."users" where "email" = 'a@example.com'
+        union all select "userId", 'T02', 'jhs', 'regular', date '2021-06-01', 'BSEd', 'Mathematics' from public."users" where "email" = 'b@example.com';
       insert into public."terms" ("schoolYearStart", "schoolYearEnd", "name", "isActive") values (2026, 2027, 'Term 2', true);
       insert into public."subjectAreas" ("name") values ('Filipino'), ('Science'), ('Mathematics');
       insert into public."rooms" ("roomNumber", "roomName", "roomType") values ('201', 'Room 201', 'classroom'), ('L1', 'Chemistry Lab', 'laboratory');

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { formatFileSize, isSafePdfPath, MAX_PDF_BYTES, parsePublicResource, resourceFilename } from "./model";
 import { readPdf } from "./download";
 
-const published = { id: 1, title: "TLC Form", category: "TLC Forms", storage_path: "tlc/form.pdf", file_size_bytes: 3922034, status: "published", visibility: "public" };
+const published = { resourceId: 1, title: "TLC Form", category: "TLC Forms", storagePath: "tlc/form.pdf", fileSizeBytes: 3922034, status: "published", visibility: "public" };
 
 describe("public resource boundary", () => {
   it("maps public published rows and rejects draft/private/archived records", () => {
@@ -12,13 +12,13 @@ describe("public resource boundary", () => {
     }
   });
   it("rejects malformed identifiers, paths and size metadata", () => {
-    for (const fields of [{ id: Number.MAX_SAFE_INTEGER + 1 }, { title: " " }, { file_size_bytes: MAX_PDF_BYTES + 1 }, { storage_path: "../private.pdf" }]) {
+    for (const fields of [{ resourceId: Number.MAX_SAFE_INTEGER + 1 }, { title: " " }, { fileSizeBytes: MAX_PDF_BYTES + 1 }, { storagePath: "../private.pdf" }]) {
       expect(parsePublicResource({ ...published, ...fields })).toBeNull();
     }
     for (const path of ["/form.pdf", "tlc/../form.pdf", "https://example.com/form.pdf", "form.pdf?x=1", "tlc\\form.pdf", "form.html"]) {
       expect(isSafePdfPath(path)).toBe(false);
     }
-    expect(parsePublicResource({ ...published, id: "9007199254740993" })?.id).toBe("9007199254740993");
+    expect(parsePublicResource({ ...published, resourceId: "9007199254740993" })?.id).toBe("9007199254740993");
   });
   it("formats measured sizes and creates useful safe filenames", () => {
     expect(formatFileSize(3922034)).toBe("3.92 MB");
