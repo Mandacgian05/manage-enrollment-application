@@ -6,6 +6,9 @@ export interface TransactionClient {
   query(text: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
 }
 
+// Quotes a fixed camelCase column name from the server mapping (never client input).
+const column = (name: string) => `"${name}"`;
+
 // Only parameterized reads/inserts and transaction-scoped locks. No DDL,
 // permission changes, stored functions, or additional tables are needed.
 export async function saveEnrollment(client: TransactionClient, input: SaveInput): Promise<Receipt> {
@@ -15,37 +18,44 @@ export async function saveEnrollment(client: TransactionClient, input: SaveInput
     await client.query('begin');
     await client.query("set local lock_timeout = '5s'");
     await client.query("set local statement_timeout = '10s'");
-    const period = (await client.query('select status, school_year from public.enrollment_periods where id = $1 for share', [input.periodId])).rows[0];
-    if (period?.status !== 'open' || period.school_year !== input.data.schoolYear) throw new SubmissionError('closed');
+    const period = (await client.query(`select "schoolYearStart", "schoolYearEnd", "openedAt" is not null and "closedAt" is null as "isOpen"
+      from public."enrollmentPeriods" where "periodId" = $1 for share`, [input.periodId])).rows[0];
+    if (!period?.isOpen || `${period.schoolYearStart}-${period.schoolYearEnd}` !== input.data.schoolYear) throw new SubmissionError('closed');
+    const grade = (await client.query('select "gradeLevelId" from public."gradeLevels" where "name" = $1', [mapped.gradeLevel])).rows[0];
+    if (!grade) throw new SubmissionError('closed');
+    const application: Record<string, unknown> = { ...mapped.application, gradeLevelId: grade.gradeLevelId };
     await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [input.ipHash]);
     await client.query('select pg_advisory_xact_lock(hashtextextended($1, 1))', [reference]);
-    const existing = (await client.query(`select id::text, submitter_ip_hash,
-      to_jsonb(a) || jsonb_build_object('period_id', a.period_id::text) as application
-      from public.enrollment_applications a where reference_no = $1`, [reference])).rows[0];
+    const existing = (await client.query(`select a."applicationId"::text as "applicationId", a."submitterIpHash",
+      to_jsonb(a) || jsonb_build_object('periodId', a."periodId"::text, 'birthDate', a."birthDate"::text) as application
+      from public."enrollmentApplications" a where a."referenceNo" = $1`, [reference])).rows[0];
     if (existing) {
-      const application = existing.application as Record<string, unknown>;
-      const guardians = (await client.query('select relationship, full_name, occupation, contact_number from public.application_guardians where application_id = $1 order by relationship', [existing.id])).rows;
+      const saved = existing.application as Record<string, unknown>;
+      const guardians = (await client.query(`select "relationship", "lastName", "firstName", "middleName", "suffix", "occupation",
+        "contactNumber", "email", "messengerAccount" from public."applicationGuardians" where "applicationId" = $1 order by "relationship"`,
+      [existing.applicationId])).rows;
       const sameGuardians = guardians.length === mapped.guardians.length && mapped.guardians.every(expected =>
-        guardians.some(saved => Object.entries(expected).every(([key, value]) => saved[key] === value)));
-      if (existing.submitter_ip_hash !== input.ipHash || !sameGuardians ||
-        !Object.entries(mapped.application).every(([key, value]) => application[key] === value)) throw new SubmissionError('conflict');
+        guardians.some(row => Object.entries(expected).every(([key, value]) => row[key] === value)));
+      if (existing.submitterIpHash !== input.ipHash || !sameGuardians ||
+        !Object.entries(application).every(([key, value]) => saved[key] === value)) throw new SubmissionError('conflict');
       await client.query('commit');
       return { reference, created: false };
     }
-    const count = (await client.query("select count(*)::int as count from public.enrollment_applications where submitter_ip_hash = $1 and submitted_at > now() - interval '1 hour'", [input.ipHash])).rows[0];
+    const count = (await client.query(`select count(*)::int as count from public."enrollmentApplications"
+      where "submitterIpHash" = $1 and "submittedAt" > now() - interval '1 hour'`, [input.ipHash])).rows[0];
     if (Number(count?.count) >= 5) throw new SubmissionError('rate_limit');
-    // Column names are from the fixed server mapping, never client input.
-    const entries = Object.entries(mapped.application);
-    const columns = entries.map(([column]) => column).join(', ');
+    const entries = Object.entries(application);
     const placeholders = entries.map((_, index) => `$${index + 3}`).join(', ');
-    const saved = (await client.query(`insert into public.enrollment_applications
-      (reference_no, submitter_ip_hash, ${columns}, status, privacy_consent_at)
-      values ($1, $2, ${placeholders}, 'pending', now()) returning id::text`,
+    const saved = (await client.query(`insert into public."enrollmentApplications"
+      ("referenceNo", "submitterIpHash", ${entries.map(([name]) => column(name)).join(', ')}, "status", "privacyConsentAt")
+      values ($1, $2, ${placeholders}, 'pending', now()) returning "applicationId"::text as "applicationId"`,
     [reference, input.ipHash, ...entries.map(([, value]) => value)])).rows[0];
     for (const guardian of mapped.guardians) {
-      await client.query(`insert into public.application_guardians
-        (application_id, relationship, full_name, occupation, contact_number) values ($1, $2, $3, $4, $5)`,
-      [saved.id, guardian.relationship, guardian.full_name, guardian.occupation, guardian.contact_number]);
+      const fields = Object.entries(guardian);
+      await client.query(`insert into public."applicationGuardians"
+        ("applicationId", ${fields.map(([name]) => column(name)).join(', ')})
+        values ($1, ${fields.map((_, index) => `$${index + 2}`).join(', ')})`,
+      [saved.applicationId, ...fields.map(([, value]) => value)]);
     }
     await client.query('commit');
     return { reference, created: true };

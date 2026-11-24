@@ -66,9 +66,9 @@ try {
   globalThis.fetch = async input => {
     const requestUrl = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
     assert.equal(requestUrl.origin, 'https://runtime-test.supabase.co');
-    assert.equal(requestUrl.pathname, '/rest/v1/enrollment_periods');
+    assert.equal(requestUrl.pathname, '/rest/v1/enrollmentPeriods');
     reads++;
-    return Response.json([{ id: '1', status: 'open', school_year: '2026-2027' }]);
+    return Response.json([{ periodId: '1', schoolYearStart: 2026, schoolYearEnd: 2027 }]);
   };
   const available = await originalFetch(url);
   assert.equal(available.status, 200);

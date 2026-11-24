@@ -33,8 +33,8 @@ it("sends the old /cms-preview address to the content workspace", async () => {
   expect(router.currentRoute.value.name).toBe("content-workspace");
 });
 
-it.each([null, "registrar", "teacher", "academic_coordinator"])("sends %s to the staff sign-in instead of the content workspace", async (role) => {
-  vi.mocked(getStaffPortalRole).mockResolvedValue(role as "registrar" | "teacher" | "academic_coordinator" | null);
+it.each([null, "registrar", "teacher", "academicCoordinator"])("sends %s to the staff sign-in instead of the content workspace", async (role) => {
+  vi.mocked(getStaffPortalRole).mockResolvedValue(role as "registrar" | "teacher" | "academicCoordinator" | null);
   await router.push("/admin/content");
   expect(router.currentRoute.value.name).toBe("login");
 });

@@ -8,6 +8,9 @@ import express from "express";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
+// The six staff roles in Account management; admin kinds become role "admin" + adminType in the database.
+const staffRoles = ["superAdmin", "accountAdmin", "contentAdmin", "registrar", "teacher", "academicCoordinator"];
+
 export function createStaffAccountsApi(env = process.env, makeClient = createClient) {
   const app = express();
   app.disable("x-powered-by");
@@ -37,7 +40,7 @@ export function createStaffAccountsApi(env = process.env, makeClient = createCli
       return;
     }
 
-    const { email, fullName, password, role, action, staffId, temporaryPassword } = req.body ?? {};
+    const { email, firstName, middleName, lastName, suffix, password, role, action, staffId, temporaryPassword } = req.body ?? {};
     if (action === "complete-password-change") {
       const reset = user.app_metadata?.chimera_staff_action;
       if (!user.email || reset?.action !== "reset-password" || typeof reset.request_id !== "string") {
@@ -112,10 +115,13 @@ export function createStaffAccountsApi(env = process.env, makeClient = createCli
       return;
     }
     const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-    const name = typeof fullName === "string" ? fullName.trim() : "";
+    const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
+    const names = { firstName: text(firstName), middleName: text(middleName), lastName: text(lastName), suffix: text(suffix) };
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || normalizedEmail.length > 254 ||
-      !name || name.length > 150 || typeof password !== "string" || password.length < 12 || Buffer.byteLength(password) > 72 ||
-      !["admin", "registrar", "teacher", "academic_coordinator"].includes(role)) {
+      !names.firstName || !names.lastName || names.firstName.length > 100 || names.middleName.length > 100 ||
+      names.lastName.length > 100 || names.suffix.length > 10 ||
+      typeof password !== "string" || password.length < 12 || Buffer.byteLength(password) > 72 ||
+      !staffRoles.includes(role)) {
       res.status(422).json({ message: "Enter a valid name, email, role, and a password of at least 12 characters and at most 72 bytes." });
       return;
     }
@@ -124,7 +130,7 @@ export function createStaffAccountsApi(env = process.env, makeClient = createCli
       email: normalizedEmail,
       password,
       email_confirm: true,
-      app_metadata: { chimera_staff_provisioning: { created_by: user.id, full_name: name, role } },
+      app_metadata: { chimera_staff_provisioning: { createdBy: user.id, ...names, role } },
     });
     if (error?.code === "email_exists" || error?.code === "user_already_exists") {
       res.status(409).json({ message: "An Auth account already exists for this email." });

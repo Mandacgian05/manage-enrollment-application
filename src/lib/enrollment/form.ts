@@ -34,10 +34,17 @@ const contactRules = {
   hint: 'Enter one 11-digit mobile number starting with 09, e.g. 09171234567.',
   validationMessage: 'Enter exactly 11 digits starting with 09, with no spaces or punctuation.',
 };
+const suffixRules = { maxLength: 10, pattern: "[\\p{L}.]+( [\\p{L}.]+)?", validationMessage: 'Use a suffix such as Jr., Sr. or III.', hint: 'Optional, e.g. Jr., Sr. or III.' };
+export const relationships = ['father', 'mother', 'guardian'] as const;
 const parentFields = (prefix: string, mother = false): Field[] => [
-  { ...nameRules, maxLength: 150, key: `${prefix}FullName`, label: mother ? 'Full maiden name' : 'Full name', hint: 'Required if you provide an occupation or contact number below.' },
+  { ...nameRules, key: `${prefix}LastName`, label: mother ? 'Maiden last name' : 'Last name', hint: 'Required if you fill in any detail in this section.' },
+  { ...nameRules, key: `${prefix}FirstName`, label: 'First name' },
+  { ...nameRules, key: `${prefix}MiddleName`, label: mother ? 'Maiden middle name' : 'Middle name' },
+  ...(mother ? [] : [{ ...suffixRules, key: `${prefix}Suffix`, label: 'Suffix' }]),
   { key: `${prefix}Occupation`, label: 'Occupation', maxLength: 150 },
   { ...contactRules, key: `${prefix}Contact`, label: 'Contact number', type: 'tel' },
+  { key: `${prefix}Email`, label: 'Email', type: 'email' },
+  { key: `${prefix}Messenger`, label: 'Active Messenger account', maxLength: 100, hint: 'At least one parent or guardian needs a Messenger account.' },
 ];
 /**
  * The former school's name is needed whenever the checklist asks for documents from it
@@ -59,30 +66,38 @@ export function sectionsFor(data: Application): Section[] {
       { key: 'paymentMode', label: 'Mode of payment', type: 'select', required: true, options: paymentModes, hint: 'Preference only. No payment is collected online.' },
     ] },
     { title: 'Student information', description: 'Enter the student’s details as they appear in school records.', fields: [
-      { ...nameRules, key: 'surname', label: 'Surname', required: true },
+      { ...nameRules, key: 'surname', label: 'Last name', required: true },
       { ...nameRules, key: 'firstName', label: 'First name', required: true },
       { ...nameRules, key: 'middleName', label: 'Middle name' },
-      { key: 'email', label: 'Email', type: 'email', required: true },
-      { key: 'parentEmail', label: 'Parent’s email address', type: 'email' },
-      { key: 'messenger', label: 'Parent/guardian’s active Messenger account', required: true },
+      { ...suffixRules, key: 'suffix', label: 'Suffix' },
       { key: 'birthday', label: 'Birthday', type: 'date', required: true, maxLength: 10 },
       { key: 'age', label: 'Age', type: 'number', readOnly: true, hint: 'Calculated from the birthday.' },
-      { key: 'gender', label: 'Gender', type: 'select', required: true, options: ['Male', 'Female'] },
-      { key: 'address', label: 'Complete address', type: 'textarea', required: true },
-      { key: 'birthplace', label: 'Place of birth', required: true },
+      { key: 'gender', label: 'Sex', type: 'select', required: true, options: ['Male', 'Female'] },
+      { key: 'birthplace', label: 'Place of birth', required: true, maxLength: 150 },
       { key: 'religion', label: 'Religion', required: true, maxLength: 100 },
-      { ...contactRules, key: 'contact', label: 'Contact number', type: 'tel', required: true },
+      { key: 'email', label: 'Email', type: 'email', required: true },
+      { key: 'parentEmail', label: 'Parent’s email address', type: 'email' },
+      { ...contactRules, key: 'contact', label: 'Mobile number', type: 'tel', required: true },
+      { ...contactRules, key: 'secondaryContact', label: 'Other mobile number', type: 'tel', hint: 'Optional. ' + contactRules.hint },
+    ] },
+    { title: 'Home address', description: 'Where the student currently lives.', fields: [
+      { key: 'houseStreet', label: 'House no. and street', required: true, maxLength: 150 },
+      { key: 'barangay', label: 'Barangay', required: true, maxLength: 100 },
+      { key: 'cityMunicipality', label: 'City/Municipality', required: true, maxLength: 100 },
+      { key: 'province', label: 'Province', required: true, maxLength: 100 },
+      { key: 'zipCode', label: 'ZIP code', maxLength: 4, pattern: '[0-9]{4}', inputMode: 'numeric', validationMessage: 'Enter the 4-digit ZIP code.' },
     ] },
     { title: 'Father’s information', description: 'Fill in the details that apply to your family.', fields: parentFields('father') },
     { title: 'Mother’s information', description: 'Use the mother’s full maiden name, if applicable.', fields: parentFields('mother', true) },
     { title: 'Guardian’s information', description: 'Provide guardian details if applicable.', fields: parentFields('guardian') },
     { title: 'Last school attended', description: 'Enter the details of the student’s previous school.', fields: [
-      { key: 'previousSchool', label: 'Former school’s name', required: needsFormerSchool(data),
+      { key: 'previousSchool', label: 'Former school’s name', maxLength: 150, required: needsFormerSchool(data),
         hint: needsFormerSchool(data) ? 'Required: the report card and other requirements come from this school.'
           : data.studentStatus === 'Old' ? 'Not needed for students already studying at SNCS.'
             : data.level === 'Preschool' ? 'Leave blank if the child has not attended school yet.'
               : 'Required for new students and returnees above pre-school.' },
-      { key: 'previousAddress', label: 'Former school’s complete address', type: 'textarea' },
+      { key: 'previousSchoolCity', label: 'Former school’s city/municipality', maxLength: 100 },
+      { key: 'previousSchoolProvince', label: 'Former school’s province', maxLength: 100 },
     ] },
   ];
   return sections.map(section => ({ ...section, fields: section.fields.map(field => ({
@@ -136,10 +151,17 @@ export function validateApplication(input: unknown, schoolYear: string, today = 
   const age = ageAt(data.birthday, today);
   if (age === '' || Number(age) > 120) errors.birthday = 'Enter a valid birthday that is not in the future.';
   data.age = age;
-  for (const relationship of ['father', 'mother', 'guardian']) {
-    if ((data[`${relationship}Occupation`] || data[`${relationship}Contact`]) && !data[`${relationship}FullName`]) {
-      errors[`${relationship}FullName`] = `${relationship[0].toUpperCase()}${relationship.slice(1)}’s full name is required when other details are supplied.`;
+  for (const relationship of relationships) {
+    const label = `${relationship[0].toUpperCase()}${relationship.slice(1)}’s`;
+    const details = ['LastName', 'FirstName', 'MiddleName', 'Suffix', 'Occupation', 'Contact', 'Email', 'Messenger'];
+    if (details.some(detail => data[`${relationship}${detail}`])) {
+      if (!data[`${relationship}LastName`] && !errors[`${relationship}LastName`]) errors[`${relationship}LastName`] = `${label} last name is required when other details are supplied.`;
+      if (!data[`${relationship}FirstName`] && !errors[`${relationship}FirstName`]) errors[`${relationship}FirstName`] = `${label} first name is required when other details are supplied.`;
     }
+  }
+  if (!relationships.some(relationship => data[`${relationship}Messenger`])) {
+    const first = relationships.find(relationship => data[`${relationship}LastName`] || data[`${relationship}FirstName`]) ?? 'father';
+    errors[`${first}Messenger`] ??= 'Give an active Messenger account for at least one parent or guardian.';
   }
   if (data.level !== 'SHS') data.strand = '';
   return { data, errors };

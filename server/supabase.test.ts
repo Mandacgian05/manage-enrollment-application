@@ -12,20 +12,22 @@ vi.mock('pg', () => ({ Pool: PoolMock }));
 beforeEach(() => {
   vi.clearAllMocks();
   connect.mockResolvedValue({ query, release });
-  query.mockImplementation(async (text: string) => ({ rows: text.startsWith('select status') ? [{ status: 'open', school_year: '2026-2027' }]
-    : text.startsWith('select count') ? [{ count: 0 }] : text.startsWith('insert into public.enrollment_applications') ? [{ id: '1' }] : [] }));
+  query.mockImplementation(async (text: string) => ({ rows: text.startsWith('select "schoolYearStart"') ? [{ schoolYearStart: 2026, schoolYearEnd: 2027, isOpen: true }]
+    : text.startsWith('select "gradeLevelId"') ? [{ gradeLevelId: 9 }]
+    : text.startsWith('select count') ? [{ count: 0 }] : text.startsWith('insert into public."enrollmentApplications"') ? [{ applicationId: '1' }] : [] }));
 });
 
 afterEach(() => vi.unstubAllGlobals());
 it('reads the open team enrollment period and preserves bigint IDs as text', async () => {
-  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ id: '9007199254740993', school_year: '2026-2027', status: 'open' }]), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ periodId: '9007199254740993', schoolYearStart: 2026, schoolYearEnd: 2027 }]), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
   const result = await supabaseStore('https://example.supabase.co', 'test-key').period();
   expect(result).toEqual({ periodId: '9007199254740993', schoolYear: '2026-2027', status: 'open' });
   const url = new URL(String(fetchMock.mock.calls[0][0]));
-  expect(url.pathname).toBe('/rest/v1/enrollment_periods');
-  expect(url.searchParams.get('select')).toBe('id::text,status,school_year');
-  expect(url.searchParams.get('status')).toBe('eq.open');
+  expect(url.pathname).toBe('/rest/v1/enrollmentPeriods');
+  expect(url.searchParams.get('select')).toBe('periodId::text,schoolYearStart,schoolYearEnd');
+  expect(url.searchParams.get('openedAt')).toBe('not.is.null');
+  expect(url.searchParams.get('closedAt')).toBe('is.null');
 });
 it('treats no open period as closed, and distinguishes a database error', async () => {
   const fetchMock = vi.fn().mockResolvedValueOnce(new Response('[]', { headers: { 'Content-Type': 'application/json' } }))
@@ -58,7 +60,7 @@ it('rolls back and discards a failed connection without retaining database messa
 });
 it('returns enrollment availability without opening the write connection even when its TLS fails', async () => {
   connect.mockRejectedValue(Object.assign(new Error('private provider message'), { code: 'SELF_SIGNED_CERT_IN_CHAIN' }));
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([{ id: '1', status: 'open', school_year: '2026' }]), { headers: { 'Content-Type': 'application/json' } })));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([{ periodId: '1', schoolYearStart: 2026, schoolYearEnd: 2027 }]), { headers: { 'Content-Type': 'application/json' } })));
   const store = supabaseStore('https://example.supabase.co', 'test-key', 'postgresql://user:password@pool.example:6543/postgres');
   expect(await store.period()).toMatchObject({ status: 'open' });
   expect(connect).not.toHaveBeenCalled();

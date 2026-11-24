@@ -20,8 +20,8 @@ import StaffAccountsPanel from "@/components/StaffAccountsPanel.vue";
 import RegistrarApplicationsPanel from "@/components/RegistrarApplicationsPanel.vue";
 import CoordinatorSchedulerPanel from "@/components/CoordinatorSchedulerPanel.vue";
 import TeacherSchedulePanel from "@/components/TeacherSchedulePanel.vue";
-import { cmsPreviewEnabled } from "@/lib/cms/config";
 import CmsIcon from "@/components/cms/CmsIcon.vue";
+import { cmsPreviewEnabled } from "@/lib/cms/config";
 import { schedulerViews, type SchedulerNavId, type SchedulerState, type SchedulerStep } from "@/lib/schedule/scheduler-bridge";
 
 const props = defineProps<{ heading: string; role?: StaffRole }>();
@@ -35,13 +35,31 @@ const contentVersion = ref(0);
 const staffName = ref("");
 const schedulerToken = ref("");
 
-const roleLabels: Record<StaffRole, string> = { admin: "Admin", registrar: "Registrar", teacher: "Teacher", academic_coordinator: "Academic Coordinator" };
-// Both kinds of Admin have the admin role; only a Super Admin may manage staff accounts.
-// The accounts panel reports which one this is (undefined until it has checked).
+const roleLabels: Record<StaffRole, string> = { admin: "Admin", registrar: "Registrar", teacher: "Teacher", academicCoordinator: "Academic Coordinator" };
+// Three kinds of Admin share the admin role: Super Admin (everything), Account Admin (staff
+// accounts and roles) and Content Admin (website content). The database reports which one.
+type AdminAccess = { adminType: "superAdmin" | "accountAdmin" | "contentAdmin"; manageAccounts: boolean; manageContent: boolean };
+const adminLabels: Record<AdminAccess["adminType"], string> = { superAdmin: "Super Admin", accountAdmin: "Account Admin", contentAdmin: "Content Admin" };
+const adminAccess = ref<AdminAccess>();
+// The accounts panel also reports account access (undefined until it has checked).
 const canManageAccounts = ref<boolean>();
+// Website content: the workspace route exists only where the content workspace is enabled.
+const canManageContent = computed(() => cmsPreviewEnabled && adminAccess.value?.manageContent === true);
 const roleLabel = computed(() => {
-  if (props.role === "admin" && canManageAccounts.value !== undefined) return canManageAccounts.value ? "Super Admin" : "Content Admin";
+  if (props.role === "admin" && adminAccess.value) return adminLabels[adminAccess.value.adminType];
   return props.role ? roleLabels[props.role] : "Staff";
+});
+async function loadAdminAccess() {
+  try {
+    const { data, error } = await getStaffSupabaseClient().rpc("get_admin_access");
+    adminAccess.value = !error && data && typeof data === "object" ? data as AdminAccess : undefined;
+  } catch {
+    adminAccess.value = undefined;
+  }
+}
+watch(accessVerified, (verified) => {
+  if (verified && props.role === "admin") void loadAdminAccess();
+  if (!verified) adminAccess.value = undefined;
 });
 const initials = computed(() => {
   const words = staffName.value.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
@@ -51,10 +69,10 @@ const initials = computed(() => {
 
 /** Name given when the Admin created the account; falls back to the sign-in email. */
 function nameFrom(session: Session | null) {
-  const provisioning = session?.user?.app_metadata?.chimera_staff_provisioning as { full_name?: unknown } | undefined;
-  return typeof provisioning?.full_name === "string" && provisioning.full_name.trim()
-    ? provisioning.full_name.trim()
-    : session?.user?.email ?? "";
+  const provisioning = session?.user?.app_metadata?.chimera_staff_provisioning as Record<string, unknown> | undefined;
+  const name = ["firstName", "lastName"].map((key) => typeof provisioning?.[key] === "string" ? (provisioning[key] as string).trim() : "")
+    .filter(Boolean).join(" ");
+  return name || session?.user?.email || "";
 }
 
 // Session Access START
@@ -159,7 +177,7 @@ const contentSections: [string, string, string][] = [
 /** Only what each role can open today. */
 const navGroups = computed<NavGroup[]>(() => {
   // The Coordinator's side panel follows the scheduling workbench's steps.
-  if (props.role === "academic_coordinator") return [
+  if (props.role === "academicCoordinator") return [
     { label: "Workspace", items: [{ id: "overview", label: "Overview", icon: "grid", scheduler: "overview" }] },
     { label: "Build the timetable", items: [
       { id: "loads", label: "Teacher loads", icon: "users", scheduler: "loads", step: 1 },
@@ -177,7 +195,7 @@ const navGroups = computed<NavGroup[]>(() => {
         { id: "create", label: "Create account", icon: "user-plus", target: "create-account-heading" },
       ] });
     }
-    if (cmsPreviewEnabled) {
+    if (canManageContent.value) {
       groups.push({ label: "Website management", items: contentSections.map(([section, label, icon]) => (
         { id: `content-${section}`, label, icon, to: { name: "content-workspace", query: { section } } })) });
     }
@@ -198,7 +216,8 @@ const activeLabel = computed(() => navGroups.value.flatMap((group) => group.item
 const intro = computed(() => {
   switch (props.role) {
     case "admin":
-      if (canManageAccounts.value === false) return "Manage the announcements, events, pages and PDFs on the school website.";
+      if (adminAccess.value?.adminType === "contentAdmin") return "Manage the announcements, events, pages and PDFs on the school website.";
+      if (adminAccess.value?.adminType === "accountAdmin") return "Create staff accounts, assign roles, reset passwords and deactivate access.";
       return "Create staff accounts, assign roles, reset passwords and deactivate access, and keep the school website up to date.";
     case "registrar": return "Review enrollment applications, tick the requirements families present onsite, and update each status.";
     case "teacher": return "Your published weekly class schedule will appear here once the Academic Coordinator publishes it.";
@@ -252,6 +271,7 @@ function toggleCollapsed() {
 watch(() => props.role, () => {
   activeId.value = "overview";
   canManageAccounts.value = undefined;
+  adminAccess.value = undefined;
   schedulerSteps.value = {};
 });
 // Side Panel END
@@ -330,7 +350,7 @@ watch(() => props.role, () => {
         <p v-if="signOutError" class="portal-alert" role="alert">Could not sign out. Please try again.</p>
 
         <!-- The scheduling workbench draws the Coordinator's overview itself. -->
-        <h1 v-if="role === 'academic_coordinator'" id="staff-dashboard-heading" class="sr-only" tabindex="-1">{{ heading }}</h1>
+        <h1 v-if="role === 'academicCoordinator'" id="staff-dashboard-heading" class="sr-only" tabindex="-1">{{ heading }}</h1>
         <div v-else class="portal-hero">
           <div class="portal-hero-copy">
             <div class="portal-school-label"><span></span> STO. NIÑO CATHOLIC SCHOOL</div>
@@ -347,7 +367,7 @@ watch(() => props.role, () => {
           </div>
         </div>
 
-        <section v-if="role === 'admin' && cmsPreviewEnabled" class="portal-content-card" aria-labelledby="portal-content-title">
+        <section v-if="role === 'admin' && canManageContent" class="portal-content-card" aria-labelledby="portal-content-title">
           <div>
             <h2 id="portal-content-title">Website content</h2>
             <p>Manage the school website's news, events, pages and PDF resources in the SNCS content workspace.</p>
@@ -361,7 +381,7 @@ watch(() => props.role, () => {
         <div v-if="role === 'registrar'" class="portal-section">
           <RegistrarApplicationsPanel :staff-name="staffName" />
         </div>
-        <div v-if="role === 'academic_coordinator'" id="portal-scheduling" class="portal-section">
+        <div v-if="role === 'academicCoordinator'" id="portal-scheduling" class="portal-section">
           <CoordinatorSchedulerPanel ref="schedulerPanel" :access-token="schedulerToken" @state="onSchedulerState" />
         </div>
         <div v-if="role === 'teacher'" class="portal-section">

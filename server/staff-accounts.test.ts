@@ -19,7 +19,8 @@ const client = {
 };
 const makeClient = vi.fn(() => client) as unknown as typeof createClient;
 const api = createStaffAccountsApi({ SUPABASE_URL: "https://example.supabase.co", SUPABASE_SECRET_KEY: "test-key" }, makeClient);
-const input = { email: " Registrar@example.com ", fullName: " Registrar Example ", role: "registrar", password: "example-password" };
+const input = { email: " Registrar@example.com ", firstName: " Registrar ", lastName: " Example ", role: "registrar", password: "example-password" };
+const names = { firstName: "Registrar", middleName: "", lastName: "Example", suffix: "" };
 const submit = (body: Record<string, string> = input) => request(api).post("/api/staff/accounts").set("Authorization", "Bearer test-token").send(body);
 
 beforeEach(() => {
@@ -99,21 +100,26 @@ it("creates a confirmed Auth account with the assigned staff role and verified c
     email: "registrar@example.com",
     password: input.password,
     email_confirm: true,
-    app_metadata: { chimera_staff_provisioning: { created_by: user.id, full_name: "Registrar Example", role: "registrar" } },
+    app_metadata: { chimera_staff_provisioning: { createdBy: user.id, ...names, role: "registrar" } },
   });
 });
 
-it("allows an authorized manager to provision an Academic Coordinator", async () => {
-  await submit({ ...input, role: "academic_coordinator" }).expect(201);
+it.each(["academicCoordinator", "superAdmin", "accountAdmin", "contentAdmin", "teacher"])("allows an authorized manager to provision the %s role", async (role) => {
+  await submit({ ...input, role }).expect(201);
   expect(client.auth.admin.createUser).toHaveBeenCalledWith(expect.objectContaining({
-    app_metadata: { chimera_staff_provisioning: {
-      created_by: user.id, full_name: "Registrar Example", role: "academic_coordinator",
-    } },
+    app_metadata: { chimera_staff_provisioning: { createdBy: user.id, ...names, role } },
   }));
+});
+
+it("requires a first and last name", async () => {
+  await submit({ ...input, firstName: " " }).expect(422);
+  await submit({ ...input, lastName: "" }).expect(422);
+  expect(client.auth.admin.createUser).not.toHaveBeenCalled();
 });
 
 it("rejects unsupported roles and handles a duplicate email without exposing provider details", async () => {
   await submit({ ...input, role: "owner" }).expect(422);
+  await submit({ ...input, role: "admin" }).expect(422);
   expect(client.auth.admin.createUser).not.toHaveBeenCalled();
   client.auth.admin.createUser.mockResolvedValue({ error: { code: "email_exists", message: "private details" } });
   const response = await submit().expect(409);

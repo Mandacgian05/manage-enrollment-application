@@ -24,7 +24,8 @@ vi.mock("@/lib/staff-auth", () => ({ getStaffPortalRole }));
 vi.mock("@/components/StaffAccountsPanel.vue", () => ({ default: {
   template: '<div data-testid="staff-list">Admin Private — admin-private@example.com</div>',
 } }));
-vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => ({ auth: { onAuthStateChange, signOut } }) }));
+vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => ({ auth: { onAuthStateChange, signOut },
+  rpc: async (name: string) => ({ data: name === "get_admin_access" ? { adminType: "contentAdmin", manageAccounts: false, manageContent: true } : null, error: null }) }) }));
 vi.mock("vue-router", () => ({ RouterLink: { template: "<a><slot /></a>" }, useRouter: () => ({ replace }) }));
 vi.mock("@/lib/cms/config", () => ({ cmsPreviewEnabled: true }));
 
@@ -58,8 +59,8 @@ it("leaves the open dashboard when a session expires without refresh", () => {
 });
 
 it('shows scheduling after verified Academic Coordinator access and removes it at expiry',async()=>{
-  await dashboard.setProps({heading:'Academic Coordinator dashboard',role:'academic_coordinator'});
-  getStaffPortalRole.mockResolvedValue('academic_coordinator');
+  await dashboard.setProps({heading:'Academic Coordinator dashboard',role:'academicCoordinator'});
+  getStaffPortalRole.mockResolvedValue('academicCoordinator');
   emit('INITIAL_SESSION',10,'coordinator-id');
   await vi.advanceTimersByTimeAsync(0);await flushPromises();
   expect(dashboard.find('iframe[title="Academic Coordinator scheduling workspace"]').exists()).toBe(true);
@@ -188,8 +189,8 @@ it("does not restore protected records if access resolves after expiry", async (
 it("opens the Coordinator dashboard with its own role and no Admin account panel", async () => {
   emit("INITIAL_SESSION", 10);
   await vi.advanceTimersByTimeAsync(0);
-  await dashboard.setProps({ heading: "Academic Coordinator dashboard", role: "academic_coordinator" });
-  getStaffPortalRole.mockResolvedValue("academic_coordinator");
+  await dashboard.setProps({ heading: "Academic Coordinator dashboard", role: "academicCoordinator" });
+  getStaffPortalRole.mockResolvedValue("academicCoordinator");
   emit("INITIAL_SESSION", 10, "coordinator-id");
   await vi.advanceTimersByTimeAsync(0);
   expect(dashboard.get("h1").text()).toBe("Academic Coordinator dashboard");
@@ -202,7 +203,7 @@ it("shows the SNCS seal and the signed-in staff member's name once access is ver
   const listener = onAuthStateChange.mock.calls[0][0] as (event: AuthChangeEvent, session: unknown) => void;
   listener("INITIAL_SESSION", {
     expires_at: Date.now() / 1000 + 60,
-    user: { id: "admin-id", email: "ana@example.com", app_metadata: { chimera_staff_provisioning: { full_name: "Ana Reyes" } } },
+    user: { id: "admin-id", email: "ana@example.com", app_metadata: { chimera_staff_provisioning: { firstName: "Ana", lastName: "Reyes" } } },
   });
   expect(dashboard.find("img").exists()).toBe(false);
   await vi.advanceTimersByTimeAsync(0);
@@ -213,6 +214,7 @@ it("shows the SNCS seal and the signed-in staff member's name once access is ver
 
 it("gives only Admins the Website content entry to the content workspace", async () => {
   emit("INITIAL_SESSION", 10);
+  await vi.advanceTimersByTimeAsync(0);
   await vi.advanceTimersByTimeAsync(0);
   expect(dashboard.get(".portal-content-card h2").text()).toBe("Website content");
   expect(dashboard.get(".portal-content-open").text()).toBe("Open content workspace");

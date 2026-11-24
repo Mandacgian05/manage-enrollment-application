@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
   if (!RESEND_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) return reply(503, { error: "Email service is not configured." });
 
   let reference: unknown;
-  try { reference = (await req.json())?.reference_no; }
+  try { reference = (await req.json())?.referenceNo; }
   catch { return reply(400, { error: "Invalid request." }); }
   if (typeof reference !== "string" || !/^[A-Z0-9-]{1,64}$/.test(reference)) return reply(400, { error: "Invalid reference number." });
 
@@ -55,10 +55,10 @@ Deno.serve(async (req) => {
   if (!application) return reply(404, { error: "Application not found." });
 
   const status = statusLabels[application.status] ?? application.status;
-  const remarks = application.registrar_remarks
-    ? `<p><strong>Registrar remarks:</strong><br/>${escapeHtml(application.registrar_remarks).replace(/\n/g, "<br/>")}</p>`
+  const remarks = application.registrarRemarks
+    ? `<p><strong>Registrar remarks:</strong><br/>${escapeHtml(application.registrarRemarks).replace(/\n/g, "<br/>")}</p>`
     : "";
-  const { received, missing } = splitChecklist(requirementsFor(application), application.requirement_checks ?? {});
+  const { received, missing } = splitChecklist(requirementsFor(application), application.requirementChecks ?? {});
   const listItems = (items: { label: string }[]) => items.map((item) => `<li>${escapeHtml(item.label)}</li>`).join("");
   const checklist = `
     <p style="margin-bottom: 4px;"><strong>Requirements received by the Registrar:</strong></p>
@@ -71,14 +71,14 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       from: EMAIL_FROM,
       to: [application.email],
-      subject: `Enrollment Application Update - [${application.reference_no}]`,
+      subject: `Enrollment Application Update - [${application.referenceNo}]`,
       html: `
         <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
           <h2 style="color: #990000; margin-top: 0;">Sto. Niño Catholic School, Inc.</h2>
-          <p>Dear ${escapeHtml(application.first_name)} ${escapeHtml(application.surname)},</p>
+          <p>Dear ${escapeHtml(application.firstName)} ${escapeHtml(application.lastName)},</p>
           <p>The Registrar's Office has updated the processing status of your enrollment application.</p>
           <div style="background: #fdf2f2; padding: 15px; border-radius: 6px; border: 1px solid #f8d7d7; margin: 20px 0;">
-            <p style="margin: 0 0 10px 0;"><strong>Reference number:</strong> <code>${escapeHtml(application.reference_no)}</code></p>
+            <p style="margin: 0 0 10px 0;"><strong>Reference number:</strong> <code>${escapeHtml(application.referenceNo)}</code></p>
             <p style="margin: 0;"><strong>Status:</strong> <span style="color: #990000; font-weight: bold;">${escapeHtml(status)}</span></p>
           </div>
           ${remarks}

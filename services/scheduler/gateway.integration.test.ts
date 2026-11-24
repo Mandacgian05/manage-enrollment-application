@@ -9,7 +9,7 @@ import {createSchedulerApi} from '../../server/scheduler.js';
 
 vi.mock('@supabase/supabase-js',()=>({createClient:vi.fn(()=>({
   auth:{getUser:async()=>({data:{user:{id:'synthetic-coordinator'}},error:null})},
-  rpc:async()=>({data:'academic_coordinator',error:null}),
+  rpc:async()=>({data:'academicCoordinator',error:null}),
 }))}));
 let python:ChildProcess,directory:string,port:number;
 const secret='synthetic-gateway-secret-at-least-32-characters';

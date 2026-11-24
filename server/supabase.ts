@@ -31,10 +31,12 @@ export function supabaseStore(url: string, serviceKey: string, databaseUrl?: str
     async period() {
       // Availability uses the existing Supabase API independently of the write connection.
       // A database connection failure must not prevent viewing or completing the form.
-      const { data, error } = await db.from('enrollment_periods').select('id::text,status,school_year').eq('status', 'open').maybeSingle();
+      // A period is open while openedAt is set and closedAt is empty (ERD v12).
+      const { data, error } = await db.from('enrollmentPeriods').select('periodId::text,schoolYearStart,schoolYearEnd')
+        .not('openedAt', 'is', null).is('closedAt', null).maybeSingle();
       if (error) throw new ServiceError('Enrollment configuration unavailable', error.code);
       if (!data) return { status: 'closed', schoolYear: '', periodId: null };
-      return { status: data.status, schoolYear: data.school_year, periodId: String(data.id) };
+      return { status: 'open', schoolYear: `${data.schoolYearStart}-${data.schoolYearEnd}`, periodId: String(data.periodId) };
     },
     async save(input) {
       const client = await connectDatabase();

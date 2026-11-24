@@ -13,7 +13,7 @@ vi.mock("vue-router", async (importOriginal) => ({ ...(await importOriginal<type
 vi.mock("@/lib/supabase", () => ({
   getStaffSupabaseClient: () => ({
     auth: {
-      getSession: async () => ({ data: { session: { user: { email: "ana@example.com", app_metadata: { chimera_staff_provisioning: { full_name: "Ana Reyes" } } } } } }),
+      getSession: async () => ({ data: { session: { user: { email: "ana@example.com", app_metadata: { chimera_staff_provisioning: { firstName: "Ana", lastName: "Reyes" } } } } } }),
       signOut,
     },
   }),

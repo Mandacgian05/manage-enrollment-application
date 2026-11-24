@@ -11,13 +11,23 @@ import { onMounted, ref } from "vue";
 import { getStaffSupabaseClient } from "@/lib/supabase";
 import type { StaffRole } from "@/lib/staff-auth";
 
-type Role = StaffRole;
-type StaffAccount = { id: string; full_name: string; email: string; role: Role; account_status: string };
+/** The six staff roles shown in Account management. Admin kinds are stored as role "admin" + adminType. */
+type AccountRole = "superAdmin" | "accountAdmin" | "contentAdmin" | Exclude<StaffRole, "admin">;
+type AdminType = "superAdmin" | "accountAdmin" | "contentAdmin";
+type StaffAccount = {
+  userId: string; firstName: string; middleName: string | null; lastName: string; suffix: string | null;
+  email: string; role: StaffRole; adminType: AdminType | null; status: string;
+};
 
-// Tells the dashboard whether this Admin can manage staff accounts (Super Admin) or not (Content Admin).
+// Tells the dashboard whether this Admin can manage staff accounts (Super Admin or Account Admin).
 const emit = defineEmits<{ access: [canManageAccounts: boolean] }>();
 
-const roles = { admin: "Admin", registrar: "Registrar", teacher: "Teacher", academic_coordinator: "Academic Coordinator" } as const;
+const roles: Record<AccountRole, string> = {
+  superAdmin: "Super Admin", accountAdmin: "Account Admin", contentAdmin: "Content Admin",
+  registrar: "Registrar", academicCoordinator: "Academic Coordinator", teacher: "Teacher",
+};
+const accountRole = (account: StaffAccount): AccountRole => account.adminType ?? (account.role as Exclude<StaffRole, "admin">);
+const displayName = (account: StaffAccount) => [account.firstName, account.middleName, account.lastName, account.suffix].filter(Boolean).join(" ");
 const client = getStaffSupabaseClient();
 const pageSize = 25;
 const accounts = ref<StaffAccount[]>([]);
@@ -32,11 +42,14 @@ const notice = ref("");
 const resetResult = ref<{ email: string; password: string }>();
 const confirmation = ref<{ account: StaffAccount; action: "reset-password" | "deactivate" }>();
 const editingId = ref<string>();
-const selectedRole = ref<Role>("teacher");
-const fullName = ref("");
+const selectedRole = ref<AccountRole>("teacher");
+const firstName = ref("");
+const middleName = ref("");
+const lastName = ref("");
+const suffix = ref("");
 const email = ref("");
 const password = ref("");
-const newRole = ref<Role>("teacher");
+const newRole = ref<AccountRole>("teacher");
 
 async function loadAccounts(nextOffset = offset.value) {
   loading.value = true;
@@ -77,13 +90,19 @@ async function createAccount() {
     const response = await fetch("/api/staff/accounts", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ fullName: fullName.value, email: email.value, password: password.value, role: newRole.value }),
+      body: JSON.stringify({
+        firstName: firstName.value, middleName: middleName.value, lastName: lastName.value, suffix: suffix.value,
+        email: email.value, password: password.value, role: newRole.value,
+      }),
     });
     if (!response.ok) {
       const result = await response.json().catch(() => null);
       throw new Error(result?.message ?? "Could not create the staff account. Check the account list before retrying.");
     }
-    fullName.value = "";
+    firstName.value = "";
+    middleName.value = "";
+    lastName.value = "";
+    suffix.value = "";
     email.value = "";
     newRole.value = "teacher";
     notice.value = "Staff account created.";
@@ -104,7 +123,7 @@ async function assignRole(account: StaffAccount) {
   notice.value = "";
   resetResult.value = undefined;
   try {
-    const { error } = await client.rpc("assign_staff_role", { p_staff_id: account.id, p_role: selectedRole.value });
+    const { error } = await client.rpc("assign_staff_role", { p_staff_id: account.userId, p_role: selectedRole.value });
     if (error?.code === "42501") {
       formError.value = "You can change other staff members’ roles while you have account management access.";
       return;
@@ -135,7 +154,7 @@ async function confirmAccountAction() {
     const response = await fetch("/api/staff/accounts", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ action, staffId: account.id }),
+      body: JSON.stringify({ action, staffId: account.userId }),
     });
     const result = await response.json().catch(() => null);
     if (!response.ok) throw new Error(result?.message ?? "Could not complete the staff account request.");
@@ -171,7 +190,10 @@ onMounted(() => void loadAccounts());
       <h3 id="create-account-heading" tabindex="-1">Create account</h3>
       <p class="account-hint">Add a staff member and choose their role. They sign in with this email.</p>
       <form class="account-form" @submit.prevent="createAccount">
-        <label>Full name <input v-model="fullName" autocomplete="off" required maxlength="150" /></label>
+        <label>First name <input v-model="firstName" autocomplete="off" required maxlength="100" /></label>
+        <label>Middle name <input v-model="middleName" autocomplete="off" maxlength="100" /></label>
+        <label>Last name <input v-model="lastName" autocomplete="off" required maxlength="100" /></label>
+        <label>Suffix <input v-model="suffix" autocomplete="off" maxlength="10" placeholder="Jr., III" /></label>
         <label>Email <input v-model="email" type="email" autocomplete="off" required maxlength="254" /></label>
         <label>Initial password <input v-model="password" type="password" autocomplete="new-password" required minlength="12" maxlength="72" /></label>
         <label>Role
@@ -197,29 +219,29 @@ onMounted(() => void loadAccounts());
         <table aria-label="Staff account list">
           <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
           <tbody>
-            <tr v-for="account in accounts" :key="account.id">
-              <th scope="row">{{ account.full_name }}</th>
+            <tr v-for="account in accounts" :key="account.userId">
+              <th scope="row">{{ displayName(account) }}</th>
               <td>{{ account.email }}</td>
               <td>
-                <select v-if="editingId === account.id" v-model="selectedRole" :aria-label="`Role for ${account.full_name}`">
+                <select v-if="editingId === account.userId" v-model="selectedRole" :aria-label="`Role for ${displayName(account)}`">
                   <option v-for="(label, role) in roles" :key="role" :value="role">{{ label }}</option>
                 </select>
-                <template v-else>{{ roles[account.role] }}</template>
+                <template v-else>{{ roles[accountRole(account)] }}</template>
               </td>
-              <td><span class="account-status" :data-status="account.account_status">{{ account.account_status }}</span></td>
+              <td><span class="account-status" :data-status="account.status">{{ account.status }}</span></td>
               <td class="account-actions">
-                <template v-if="editingId === account.id">
-                  <button type="button" :disabled="saving || selectedRole === account.role" @click="assignRole(account)">Save role</button>
+                <template v-if="editingId === account.userId">
+                  <button type="button" :disabled="saving || selectedRole === accountRole(account)" @click="assignRole(account)">Save role</button>
                   <button type="button" :disabled="saving" @click="editingId = undefined">Cancel</button>
                 </template>
-                <template v-else-if="confirmation?.account.id === account.id">
-                  <p>Confirm {{ confirmation.action === "deactivate" ? "deactivation" : "password reset" }} for {{ account.full_name }}.</p>
+                <template v-else-if="confirmation?.account.userId === account.userId">
+                  <p>Confirm {{ confirmation.action === "deactivate" ? "deactivation" : "password reset" }} for {{ displayName(account) }}.</p>
                   <button type="button" :disabled="saving" @click="confirmAccountAction">Confirm</button>
                   <button type="button" :disabled="saving" @click="confirmation = undefined">Cancel</button>
                 </template>
                 <template v-else>
-                  <button type="button" :disabled="saving" @click="editingId = account.id; selectedRole = account.role; confirmation = undefined">Change role</button>
-                  <template v-if="account.account_status === 'active'">
+                  <button type="button" :disabled="saving" @click="editingId = account.userId; selectedRole = accountRole(account); confirmation = undefined">Change role</button>
+                  <template v-if="account.status === 'active'">
                     <button type="button" :disabled="saving" @click="confirmation = { account, action: 'reset-password' }; editingId = undefined">Reset password</button>
                     <button type="button" :disabled="saving" @click="confirmation = { account, action: 'deactivate' }; editingId = undefined">Deactivate</button>
                   </template>

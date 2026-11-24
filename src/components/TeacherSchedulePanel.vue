@@ -52,8 +52,8 @@ onMounted(load);
       <p class="eyebrow-small">Teacher portal</p>
       <h2 id="teacher-schedule-heading">My class schedule</h2>
       <p v-if="schedule?.run" class="muted">
-        {{ schedule.run.school_year }} · {{ schedule.run.term }}
-        <template v-if="schedule.run.published_at"> · published {{ published.format(new Date(schedule.run.published_at)) }}</template>
+        {{ schedule.run.schoolYearStart }}-{{ schedule.run.schoolYearEnd }} · {{ schedule.run.term }}
+        <template v-if="schedule.run.publishedAt"> · published {{ published.format(new Date(schedule.run.publishedAt)) }}</template>
       </p>
     </div>
 
@@ -100,12 +100,12 @@ onMounted(load);
           </h3>
           <p v-if="!group.entries.length" class="muted no-class">No classes</p>
           <ul v-else>
-            <li v-for="entry in group.entries" :key="`${entry.start_time}-${entry.subject}-${entry.section}`" class="class-card">
-              <p class="time">{{ formatTime(entry.start_time) }} – {{ formatTime(entry.end_time) }}</p>
+            <li v-for="entry in group.entries" :key="`${entry.startTime}-${entry.subject}-${entry.section}`" class="class-card">
+              <p class="time">{{ formatTime(entry.startTime) }} – {{ formatTime(entry.endTime) }}</p>
               <p class="subject">{{ entry.subject }}</p>
-              <p class="section">{{ entry.section }}<template v-if="entry.strand"> · {{ entry.strand }}</template></p>
+              <p class="section">{{ entry.section }}<template v-if="entry.strands"> · {{ entry.strands }}</template></p>
               <p class="room">{{ entry.room ?? "Room to be assigned" }}</p>
-              <span v-if="entry.is_fixed" class="fixed-badge">Fixed lab class</span>
+              <span v-if="entry.isFixed" class="fixed-badge">Fixed lab class</span>
             </li>
           </ul>
         </section>

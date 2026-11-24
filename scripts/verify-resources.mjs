@@ -11,13 +11,13 @@ const manifest = JSON.parse(readFileSync("docs/reference-site/resources-manifest
 const expected = manifest.resources.filter((resource) => resource.status === "published" && resource.visibility === "public");
 if (expected.length !== 2) throw new Error("Expected two published TLC originals in the manifest.");
 const request = (path) => fetch(new URL(path, base), { headers: { apikey: key }, signal: AbortSignal.timeout(30000) });
-const response = await request("/rest/v1/resources?select=id,title,category,storage_path,file_size_bytes,status,visibility");
+const response = await request("/rest/v1/resources?select=resourceId,title,category,storagePath,fileSizeBytes,status,visibility");
 if (!response.ok) throw new Error(`Resource listing: HTTP ${response.status}`);
 const rows = await response.json();
 if (rows.length !== expected.length || rows.some((row) => row.status !== "published" || row.visibility !== "public")) throw new Error("Unexpected public records.");
 for (const resource of expected) {
-  const row = rows.find((item) => item.storage_path === resource.storagePath);
-  if (!row || row.file_size_bytes !== resource.fileSizeBytes || row.title !== resource.title || row.category !== resource.category) throw new Error("Resource metadata mismatch.");
+  const row = rows.find((item) => item.storagePath === resource.storagePath);
+  if (!row || row.fileSizeBytes !== resource.fileSizeBytes || row.title !== resource.title || row.category !== resource.category) throw new Error("Resource metadata mismatch.");
   const file = await request(`/storage/v1/object/public/resource-files/${resource.storagePath}`);
   if (!file.ok) throw new Error(`PDF retrieval: HTTP ${file.status}`);
   const bytes = Buffer.from(await file.arrayBuffer());

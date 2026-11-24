@@ -196,14 +196,14 @@ async function showPrevious() {
 }
 
 function markUpdated(reference: string, status: ApplicationSummary["status"]) {
-  const row = applications.value.find((item) => item.reference_no === reference);
+  const row = applications.value.find((item) => item.referenceNo === reference);
   if (row) row.status = status;
   void loadCounts();
 }
 // Review Navigation END
 
 function initials(application: ApplicationSummary) {
-  return `${application.first_name.charAt(0)}${application.surname.charAt(0)}`.toUpperCase();
+  return `${application.firstName.charAt(0)}${application.lastName.charAt(0)}`.toUpperCase();
 }
 </script>
 
@@ -296,26 +296,26 @@ function initials(application: ApplicationSummary) {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(application, index) in applications" :key="application.reference_no" @click="openApplication(index)">
+          <tr v-for="(application, index) in applications" :key="application.referenceNo" @click="openApplication(index)">
             <th scope="row">
               <span class="person">
                 <span class="initials" aria-hidden="true">{{ initials(application) }}</span>
                 <span>
-                  <span class="person-name">{{ application.first_name }} {{ application.surname }}</span>
-                  <span class="person-ref">{{ application.reference_no }}</span>
+                  <span class="person-name">{{ application.firstName }} {{ application.lastName }}</span>
+                  <span class="person-ref">{{ application.referenceNo }}</span>
                 </span>
               </span>
             </th>
             <td>
               <span class="tags">
-                <span class="grade">{{ application.grade_level }}</span>
+                <span class="grade">{{ application.gradeLevel }}</span>
                 <span :class="['status-badge', application.status]">{{ applicationStatuses[application.status] }}</span>
               </span>
             </td>
             <td class="when-col">
-              <time :datetime="application.submitted_at">
-                <span class="when-relative">{{ timeAgo(application.submitted_at) }}</span>
-                <span class="when-exact">{{ shortDate.format(new Date(application.submitted_at)) }}</span>
+              <time :datetime="application.submittedAt">
+                <span class="when-relative">{{ timeAgo(application.submittedAt) }}</span>
+                <span class="when-exact">{{ shortDate.format(new Date(application.submittedAt)) }}</span>
               </time>
             </td>
             <td class="action-col">
@@ -335,7 +335,7 @@ function initials(application: ApplicationSummary) {
 
     <RegistrarApplicationDetail
       v-if="selectedIndex !== undefined && applications[selectedIndex]"
-      :reference="applications[selectedIndex].reference_no"
+      :reference="applications[selectedIndex].referenceNo"
       :has-previous="selectedIndex > 0 || offset > 0"
       :has-next="selectedIndex < applications.length - 1 || hasMore"
       @close="selectedIndex = undefined"

@@ -42,7 +42,7 @@ const router = createRouter({
     { path: "/admin", name: "admin-dashboard", component: () => import("@/views/StaffDashboardView.vue"), props: { heading: "Admin dashboard", role: "admin" }, meta: { title: "Admin dashboard", authLayout: true, staffRole: "admin" } },
     { path: "/registrar", name: "registrar-dashboard", component: () => import("@/views/StaffDashboardView.vue"), props: { heading: "Registrar dashboard", role: "registrar" }, meta: { title: "Registrar dashboard", authLayout: true, staffRole: "registrar" } },
     { path: "/teacher", name: "teacher-dashboard", component: () => import("@/views/StaffDashboardView.vue"), props: { heading: "Teacher dashboard", role: "teacher" }, meta: { title: "Teacher dashboard", authLayout: true, staffRole: "teacher" } },
-    { path: "/academic-coordinator", name: "academic-coordinator-dashboard", component: () => import("@/views/StaffDashboardView.vue"), props: { heading: "Academic Coordinator dashboard", role: "academic_coordinator" }, meta: { title: "Academic Coordinator dashboard", authLayout: true, staffRole: "academic_coordinator" } },
+    { path: "/academic-coordinator", name: "academic-coordinator-dashboard", component: () => import("@/views/StaffDashboardView.vue"), props: { heading: "Academic Coordinator dashboard", role: "academicCoordinator" }, meta: { title: "Academic Coordinator dashboard", authLayout: true, staffRole: "academicCoordinator" } },
     { path: "/enrollment", name: "enrollment", component: () => import("@/views/EnrollmentView.vue"), meta: { title: "Enrollment application" } },
     { path: "/", name: "home", component: HomeView, meta: { title: "Home" } },
     { path: "/about", name: "about", component: AboutView, meta: { title: "About" } },

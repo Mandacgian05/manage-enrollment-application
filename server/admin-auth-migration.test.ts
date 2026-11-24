@@ -3,113 +3,87 @@
  * Created Date: 20261113
  * Modified by: Jan Sultan | Email: jgsultan@student.apc.edu.ph
  * Modified Date: 20261119
+ * Modified by: Gian Mandac (ERD v12 schema: camelCase, split names, three Admin kinds)
+ * Modified Date: 20261125
  */
-import { readFileSync } from "node:fs";
-import { PGlite } from "@electric-sql/pglite";
+import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { validApplication } from "../src/lib/enrollment/fixtures";
 import { saveEnrollment } from "./enrollment-transaction";
+import { asUser as runAs, createTestDatabase } from "./testing/database";
 
-describe("staff authorization migrations", () => {
+describe("staff authorization (ERD v12 schema)", () => {
   let db: PGlite;
-  const adminId = "00000000-0000-4000-8000-000000000001";
+  const contentAdminId = "00000000-0000-4000-8000-000000000001";
   const teacherId = "00000000-0000-4000-8000-000000000002";
   const inactiveId = "00000000-0000-4000-8000-000000000003";
   const unlinkedId = "00000000-0000-4000-8000-000000000004";
   const resetId = "00000000-0000-4000-8000-000000000005";
   const registrarId = "00000000-0000-4000-8000-000000000006";
-  const managerId = "00000000-0000-4000-8000-000000000007";
+  const superAdminId = "00000000-0000-4000-8000-000000000007";
+  const accountAdminId = "00000000-0000-4000-8000-000000000014";
   const coordinatorId = "00000000-0000-4000-8000-000000000012";
   let reference: string;
 
-  function asUser<T>(userId: string, sql: string, values: unknown[] = [], sessionId = userId) {
-    return db.transaction(async (tx) => {
-      await tx.exec("set local role authenticated");
-      await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
-      await tx.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ session_id: sessionId })]);
-      return tx.query<T>(sql, values);
-    });
-  }
+  const asUser = <T>(userId: string, sql: string, values: unknown[] = [], sessionId = userId) =>
+    runAs<T>(db, userId, sql, values, sessionId);
 
   beforeAll(async () => {
-    db = new PGlite();
-    await db.exec(`
-      create role anon;
-      create role authenticated;
-      create role service_role;
-      create schema auth;
-      create table auth.users (id uuid primary key, email text, raw_app_meta_data jsonb, encrypted_password text);
-      create table auth.sessions (id uuid primary key, user_id uuid references auth.users(id));
-      create function auth.uid() returns uuid language sql stable as
-        $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-      create function auth.jwt() returns jsonb language sql stable as
-        $$ select nullif(current_setting('request.jwt.claims', true), '')::jsonb $$;
-    `);
-    const schema = readFileSync(new URL("../supabase/reference/SNCS_Schema_Final.sql", import.meta.url), "utf8");
-    await db.exec(schema.slice(schema.indexOf("CREATE TABLE users ("), schema.indexOf("-- 2. WEBSITE CONTENT")));
-    await db.exec(schema.slice(schema.indexOf("CREATE TABLE enrollment_periods ("), schema.indexOf("-- 4. SCHEDULING")));
-    await db.exec("grant select, insert, update, delete on public.users to anon, authenticated");
-    await db.exec("grant select on public.enrollment_applications to anon, authenticated");
-    for (const migration of [
-      "202611130001_sc13_admin_auth.sql", "202611140001_sc20_staff_portal_role.sql",
-      "202611140002_sc18_manage_staff_accounts.sql", "202611140003_sc21_registrar_application_access.sql",
-      "202611140004_sc19_sc30_staff_access.sql", "202611160001_manage_enrollment_application.sql",
-    ]) {
-      await db.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
-    }
-    await db.query("insert into auth.users (id) values ($1), ($2), ($3), ($4), ($5), ($6), ($7), ($8)", [
-      adminId, teacherId, inactiveId, unlinkedId, resetId, registrarId, managerId, coordinatorId,
-    ]);
+    db = await createTestDatabase();
+    await db.query("insert into auth.users (id) select unnest($1::uuid[])", [[
+      contentAdminId, teacherId, inactiveId, unlinkedId, resetId, registrarId, superAdminId, accountAdminId, coordinatorId,
+    ]]);
     await db.exec("insert into auth.sessions (id, user_id) select id, id from auth.users");
     await db.query(`
-      insert into public.users (email, full_name, role, account_status, auth_user_id, must_change_password) values
-        ('admin@example.com', 'Admin', 'admin', 'active', $1, false),
-        ('teacher@example.com', 'Teacher', 'teacher', 'active', $2, false),
-        ('inactive@example.com', 'Inactive', 'admin', 'inactive', $3, false),
-        ('reset@example.com', 'Reset', 'registrar', 'active', $4, true),
-        ('registrar@example.com', 'Registrar', 'registrar', 'active', $5, false),
-        ('manager@example.com', 'Manager', 'admin', 'active', $6, false)
-    `, [adminId, teacherId, inactiveId, resetId, registrarId, managerId]);
-    // Apply the role extension after existing accounts are present to check upgrades.
-    await db.exec(readFileSync(new URL("../supabase/migrations/202611190001_academic_coordinator_access.sql", import.meta.url), "utf8"));
-    await db.query(`insert into public.users (email, full_name, role, auth_user_id)
-      values ('coordinator@example.com', 'Academic Coordinator', 'academic_coordinator', $1)`, [coordinatorId]);
-    await db.query("update public.users set manage_staff_accounts = true where auth_user_id = $1", [managerId]);
-    await db.exec("insert into public.enrollment_periods (school_year, status) values ('2026-2027', 'open')");
+      insert into public."users" ("email", "firstName", "lastName", "role", "adminType", "status", "authUserId", "mustChangePassword") values
+        ('admin@example.com', 'Content', 'Admin', 'admin', 'contentAdmin', 'active', $1, false),
+        ('teacher@example.com', 'Test', 'Teacher', 'teacher', null, 'active', $2, false),
+        ('inactive@example.com', 'Inactive', 'Admin', 'admin', 'superAdmin', 'inactive', $3, false),
+        ('reset@example.com', 'Reset', 'Registrar', 'registrar', null, 'active', $4, true),
+        ('registrar@example.com', 'Test', 'Registrar', 'registrar', null, 'active', $5, false),
+        ('manager@example.com', 'Super', 'Admin', 'admin', 'superAdmin', 'active', $6, false),
+        ('accounts@example.com', 'Account', 'Admin', 'admin', 'accountAdmin', 'active', $7, false),
+        ('coordinator@example.com', 'Academic', 'Coordinator', 'academicCoordinator', null, 'active', $8, false)
+    `, [contentAdminId, teacherId, inactiveId, resetId, registrarId, superAdminId, accountAdminId, coordinatorId]);
+    await db.exec(`insert into public."enrollmentPeriods" ("schoolYearStart", "schoolYearEnd", "openedAt") values (2026, 2027, now())`);
     const receipt = await saveEnrollment({ query: (sql, values) => db.query(sql, values) }, {
-      submissionId: "00000000-0000-4000-8000-000000000008", periodId: "1", ipHash: "test-ip", data: validApplication,
+      submissionId: "00000000-0000-4000-8000-000000000008", periodId: "1", ipHash: "a".repeat(64), data: validApplication,
     });
     reference = receipt.reference;
   }, 30_000);
   afterAll(async () => { await db?.close(); });
 
   it.each([
-    ["active admin", adminId, "admin"],
+    ["Content Admin", contentAdminId, "admin"],
+    ["Account Admin", accountAdminId, "admin"],
     ["active Registrar", registrarId, "registrar"],
     ["active Teacher", teacherId, "teacher"],
-    ["active Academic Coordinator", coordinatorId, "academic_coordinator"],
+    ["active Academic Coordinator", coordinatorId, "academicCoordinator"],
     ["inactive admin", inactiveId, null],
     ["unlinked Auth user", unlinkedId, null],
     ["Registrar who must change their password", resetId, "password-change"],
     ["missing Auth subject", "", null],
   ])("checks the current role and status for %s", async (_name, userId, role) => {
-    const result = await asUser(userId, "select public.get_staff_portal_role() as role, public.has_active_admin_access() as legacy_admin");
-    expect(result.rows).toEqual([{ role, legacy_admin: role === "admin" }]);
+    const result = await asUser(userId, "select public.get_staff_portal_role() as role, public.has_active_admin_access() as admin");
+    expect(result.rows).toEqual([{ role, admin: role === "admin" }]);
   });
 
-  it("blocks anonymous access to the RPC and prevents browser role escalation", async () => {
+  it("tells each kind of Admin what they may open", async () => {
+    const access = async (userId: string) => (await asUser<{ a: unknown }>(userId, "select public.get_admin_access() as a")).rows[0].a;
+    expect(await access(superAdminId)).toEqual({ adminType: "superAdmin", manageAccounts: true, manageContent: true });
+    expect(await access(accountAdminId)).toEqual({ adminType: "accountAdmin", manageAccounts: true, manageContent: false });
+    expect(await access(contentAdminId)).toEqual({ adminType: "contentAdmin", manageAccounts: false, manageContent: true });
+    expect(await access(registrarId)).toBeNull();
+  });
+
+  it("blocks anonymous access to the functions and prevents browser role escalation", async () => {
     await expect(db.transaction(async (tx) => {
       await tx.exec("set local role anon");
       await tx.query("select public.get_staff_portal_role()");
     })).rejects.toMatchObject({ code: "42501" });
-    await expect(db.transaction(async (tx) => {
-      await tx.exec("set local role authenticated");
-      await tx.query("update public.users set role = 'admin' where auth_user_id = $1", [teacherId]);
-    })).rejects.toMatchObject({ code: "42501" });
-    await expect(db.transaction(async (tx) => {
-      await tx.exec("set local role authenticated");
-      await tx.query("select password_hash from public.users");
-    })).rejects.toMatchObject({ code: "42501" });
+    await expect(asUser(teacherId, `update public."users" set "role" = 'admin' where "authUserId" = $1`, [teacherId]))
+      .rejects.toMatchObject({ code: "42501" });
+    await expect(asUser(teacherId, `select "email" from public."users"`)).rejects.toMatchObject({ code: "42501" });
   });
 
   it("denies Teacher access when the JWT session is missing or belongs to another account", async () => {
@@ -119,84 +93,62 @@ describe("staff authorization migrations", () => {
     }
   });
 
-  it("returns an application saved through PB-12 to an active Registrar", async () => {
-    const result = await asUser(registrarId, "select * from public.list_registrar_applications()");
-    expect(result.rows).toEqual([{ reference_no: reference, status: "pending", submitted_at: expect.any(Date) }]);
-  });
-
-  it.each([adminId, teacherId, coordinatorId, unlinkedId, resetId, ""])("denies enrollment RPC access to a non-Registrar session", async (userId) => {
-    await expect(asUser(userId, "select * from public.list_registrar_applications()")).rejects.toMatchObject({ code: "42501" });
-  });
-
-  it("blocks public access through both the RPC and the enrollment table", async () => {
-    for (const sql of ["select * from public.list_registrar_applications()", "select * from public.enrollment_applications"]) {
-      await expect(db.transaction(async (tx) => {
-        await tx.exec("set local role anon");
-        await tx.query(sql);
-      })).rejects.toMatchObject({ code: "42501" });
-    }
-    await expect(asUser(registrarId, "select * from public.enrollment_applications")).rejects.toMatchObject({ code: "42501" });
-  });
-
-  it("links accounts provisioned by an authorized manager and rolls back a failed Auth transaction", async () => {
+  it("links accounts provisioned by an account manager and rolls back a failed Auth transaction", async () => {
     const newId = "00000000-0000-4000-8000-000000000009";
-    const provision = (actor: string, email: string, authId: string) => db.transaction(async (tx) => {
+    const provision = (actor: string, email: string, authId: string, role = "registrar") => db.transaction(async (tx) => {
       await tx.query("insert into auth.users (id, email) values ($1, $2)", [authId, email]);
       await tx.query("update auth.users set raw_app_meta_data = $1 where id = $2", [
-        { chimera_staff_provisioning: { created_by: actor, full_name: "New staff", role: "registrar" } }, authId,
+        { chimera_staff_provisioning: { createdBy: actor, firstName: "New", middleName: "", lastName: "Staff", suffix: "Jr.", role } }, authId,
       ]);
     });
-    await expect(provision(adminId, "new@example.com", newId)).rejects.toMatchObject({ code: "42501" });
+    await expect(provision(contentAdminId, "new@example.com", newId)).rejects.toMatchObject({ code: "42501" });
     expect((await db.query("select id from auth.users where id = $1", [newId])).rows).toEqual([]);
-    await expect(provision(managerId, "registrar@example.com", newId)).rejects.toMatchObject({ code: "23505" });
+    await expect(provision(accountAdminId, "new@example.com", newId, "superAdmin")).rejects.toMatchObject({ code: "42501" });
+    await expect(provision(superAdminId, "registrar@example.com", newId)).rejects.toMatchObject({ code: "23505" });
     expect((await db.query("select id from auth.users where id = $1", [newId])).rows).toEqual([]);
-    await provision(managerId, "NEW@example.com", newId);
-    expect((await db.query("select email, role, password_hash, manage_staff_accounts from public.users where auth_user_id = $1", [newId])).rows)
-      .toEqual([{ email: "new@example.com", role: "registrar", password_hash: null, manage_staff_accounts: false }]);
-    expect((await db.query("select action, new_value from public.audit_logs where action = 'account.create'")).rows)
-      .toEqual([{ action: "account.create", new_value: { role: "registrar" } }]);
+    await provision(accountAdminId, "NEW@example.com", newId);
+    expect((await db.query(`select "email", "firstName", "middleName", "lastName", "suffix", "role", "adminType"
+      from public."users" where "authUserId" = $1`, [newId])).rows)
+      .toEqual([{ email: "new@example.com", firstName: "New", middleName: null, lastName: "Staff", suffix: "Jr.", role: "registrar", adminType: null }]);
+    expect((await db.query(`select "action", "newValue" from public."auditLogs" where "action" = 'account.create'`)).rows)
+      .toEqual([{ action: "account.create", newValue: { role: "registrar", adminType: null } }]);
   });
 
-  it("lists and assigns roles only for authorized account managers", async () => {
-    const { rows: [account] } = await db.query<{ id: string }>("select id::text from public.users where auth_user_id = $1", [teacherId]);
-    for (const userId of [adminId, registrarId, teacherId, coordinatorId]) {
+  it("lists and assigns roles only for Super Admins and Account Admins", async () => {
+    const { rows: [account] } = await db.query<{ id: string }>(`select "userId"::text as id from public."users" where "authUserId" = $1`, [teacherId]);
+    for (const userId of [contentAdminId, registrarId, teacherId, coordinatorId]) {
       await expect(asUser(userId, "select * from public.list_staff_accounts()")).rejects.toMatchObject({ code: "42501" });
       await expect(asUser(userId, "select public.assign_staff_role($1, 'registrar')", [account.id])).rejects.toMatchObject({ code: "42501" });
     }
-    const list = await asUser(managerId, "select * from public.list_staff_accounts()");
-    expect(list.rows).toContainEqual({ id: account.id, email: "teacher@example.com", full_name: "Teacher", role: "teacher", account_status: "active" });
-    await asUser(managerId, "select public.assign_staff_role($1, 'registrar')", [account.id]);
+    const list = await asUser(accountAdminId, "select * from public.list_staff_accounts()");
+    expect(list.rows).toContainEqual({ userId: account.id, firstName: "Test", middleName: null, lastName: "Teacher", suffix: null,
+      email: "teacher@example.com", role: "teacher", adminType: null, status: "active" });
+    await asUser(accountAdminId, "select public.assign_staff_role($1, 'registrar')", [account.id]);
     expect((await asUser(teacherId, "select public.get_staff_portal_role() as role")).rows).toEqual([{ role: "registrar" }]);
-    await asUser(managerId, "select public.assign_staff_role($1, 'teacher')", [account.id]);
-    await expect(asUser(teacherId, "select * from public.list_registrar_applications()")).rejects.toMatchObject({ code: "42501" });
-    expect((await db.query("select action from public.audit_logs where entity_id = $1 order by id", [account.id])).rows)
+    await asUser(accountAdminId, "select public.assign_staff_role($1, 'teacher')", [account.id]);
+    await expect(asUser(teacherId, "select * from public.search_registrar_applications()")).rejects.toMatchObject({ code: "42501" });
+    expect((await db.query(`select "action" from public."auditLogs" where "entityId" = $1 and "entityType" = 'users' order by "auditLogId"`, [account.id])).rows)
       .toEqual([{ action: "role.change" }, { action: "role.change" }]);
   });
 
-  it("provisions and assigns the Coordinator role while keeping account management restricted to Admin", async () => {
-    const newId = "00000000-0000-4000-8000-000000000013";
-    await db.query("insert into auth.users (id, email, raw_app_meta_data) values ($1, 'new-coordinator@example.com', $2)", [
-      newId, { chimera_staff_provisioning: { created_by: managerId, full_name: "New Coordinator", role: "academic_coordinator" } },
-    ]);
-    const { rows: [account] } = await db.query<{ id: string; role: string }>("select id::text, role from public.users where auth_user_id = $1", [newId]);
-    expect(account.role).toBe("academic_coordinator");
-    await db.query("insert into auth.sessions values ($1, $1)", [newId]);
-    expect((await asUser(newId, "select public.get_staff_portal_role() as role")).rows).toEqual([{ role: "academic_coordinator" }]);
-    await asUser(managerId, "select public.assign_staff_role($1, 'admin')", [account.id]);
-    await db.query("update public.users set manage_staff_accounts = true where id = $1", [account.id]);
-    await asUser(managerId, "select public.assign_staff_role($1, 'academic_coordinator')", [account.id]);
-    expect((await db.query("select manage_staff_accounts from public.users where id = $1", [account.id])).rows)
-      .toEqual([{ manage_staff_accounts: false }]);
-    await expect(asUser(newId, "select * from public.list_staff_accounts()")).rejects.toMatchObject({ code: "42501" });
-    await db.query("update public.users set must_change_password = true where id = $1", [account.id]);
-    expect((await asUser(newId, "select public.get_staff_portal_role() as role")).rows).toEqual([{ role: "password-change" }]);
-    await db.query("update public.users set account_status = 'inactive' where id = $1", [account.id]);
-    expect((await asUser(newId, "select public.get_staff_portal_role() as role")).rows).toEqual([{ role: null }]);
+  it("stores Admin kinds as role admin plus adminType, and only a Super Admin manages Super Admin access", async () => {
+    const { rows: [account] } = await db.query<{ id: string }>(`select "userId"::text as id from public."users" where "authUserId" = $1`, [coordinatorId]);
+    const stored = async () => (await db.query(`select "role", "adminType" from public."users" where "userId" = $1`, [account.id])).rows[0];
+    await asUser(accountAdminId, "select public.assign_staff_role($1, 'contentAdmin')", [account.id]);
+    expect(await stored()).toEqual({ role: "admin", adminType: "contentAdmin" });
+    await expect(asUser(accountAdminId, "select public.assign_staff_role($1, 'superAdmin')", [account.id])).rejects.toMatchObject({ code: "42501" });
+    await asUser(superAdminId, "select public.assign_staff_role($1, 'superAdmin')", [account.id]);
+    expect(await stored()).toEqual({ role: "admin", adminType: "superAdmin" });
+    await expect(asUser(accountAdminId, "select public.assign_staff_role($1, 'registrar')", [account.id])).rejects.toMatchObject({ code: "42501" });
+    await asUser(superAdminId, "select public.assign_staff_role($1, 'academicCoordinator')", [account.id]);
+    expect(await stored()).toEqual({ role: "academicCoordinator", adminType: null });
+    await expect(asUser(superAdminId, "select public.assign_staff_role($1, 'admin')", [account.id])).rejects.toMatchObject({ code: "22023" });
+    await expect(db.query(`update public."users" set "adminType" = null where "authUserId" = $1`, [contentAdminId])).rejects.toMatchObject({ code: "23514" });
   });
 
   // Reset and Deactivation Tests START
   it("locks out revoked sessions and requires the current reset before restoring dashboard access", async () => {
-    const { rows: [account] } = await db.query<{ id: string }>("select id::text from public.users where auth_user_id = $1", [teacherId]);
+    const { rows: [account] } = await db.query<{ id: string }>(`select "userId"::text as id from public."users" where "authUserId" = $1`, [teacherId]);
     const freshSession = "00000000-0000-4000-8000-000000000010";
     const resetSession = "00000000-0000-4000-8000-000000000011";
     const role = "select public.get_staff_portal_role() as role";
@@ -206,14 +158,13 @@ describe("staff authorization migrations", () => {
       await tx.query("delete from auth.sessions where user_id = $1", [teacherId]);
       await tx.query("update auth.users set raw_app_meta_data = $1 where id = $2", [{ chimera_staff_action: action }, teacherId]);
     });
-    const reset = { action: "reset-password", staff_id: account.id, actor_id: managerId, request_id: "reset-1" };
-    await expect(authAction("rejected", { ...reset, actor_id: adminId })).rejects.toMatchObject({ code: "42501" });
+    const reset = { action: "reset-password", staff_id: account.id, actor_id: superAdminId, request_id: "reset-1" };
+    await expect(authAction("rejected", { ...reset, actor_id: contentAdminId })).rejects.toMatchObject({ code: "42501" });
     expect((await asUser(teacherId, role)).rows).toEqual([{ role: "teacher" }]);
     await authAction("temporary", reset);
     expect((await asUser(teacherId, role)).rows).toEqual([{ role: null }]);
     await db.query("insert into auth.sessions values ($1, $2)", [resetSession, teacherId]);
     expect((await asUser(teacherId, role, [], resetSession)).rows).toEqual([{ role: "password-change" }]);
-    await expect(asUser(teacherId, "select * from public.list_registrar_applications()", [], resetSession)).rejects.toMatchObject({ code: "42501" });
     const complete = { action: "complete-password-change", reset_id: "reset-1", request_id: "complete-1" };
     await expect(authAction("rejected", { ...complete, reset_id: "older-reset" })).rejects.toMatchObject({ code: "42501" });
     expect((await asUser(teacherId, role, [], resetSession)).rows).toEqual([{ role: "password-change" }]);
@@ -223,24 +174,25 @@ describe("staff authorization migrations", () => {
     expect((await asUser(teacherId, role, [], freshSession)).rows).toEqual([{ role: "teacher" }]);
     await authAction("unavailable", { ...reset, action: "deactivate", request_id: "deactivate-1" });
     expect((await asUser(teacherId, role, [], freshSession)).rows).toEqual([{ role: null }]);
-    await db.query("insert into auth.sessions values ($1, $2)", [freshSession, teacherId]);
+    await db.query("insert into auth.sessions values ($1, $2) on conflict do nothing", [freshSession, teacherId]);
     expect((await asUser(teacherId, role, [], freshSession)).rows).toEqual([{ role: null }]);
-    expect((await db.query("select action, actor_user_id = (select id from public.users where auth_user_id = $1) as authorized from public.audit_logs where entity_id = $2 and action like 'account.%' order by id", [managerId, account.id])).rows)
+    expect((await db.query(`select "action", "performedBy" = (select "userId" from public."users" where "authUserId" = $1) as authorized
+      from public."auditLogs" where "entityId" = $2 and "action" like 'account.%' order by "auditLogId"`, [superAdminId, account.id])).rows)
       .toEqual([{ action: "account.password_reset", authorized: true }, { action: "account.deactivate", authorized: true }]);
   });
   // Reset and Deactivation Tests END
 
   // Manage Enrollment Application Tests START
   it("searches and filters applications only for an active Registrar", async () => {
-    const search = (args: unknown[]) => asUser(registrarId,
-      "select reference_no from public.search_registrar_applications($1::text, $2::text, $3::date, $4::date)", args);
-    expect((await search(["example, test", null, null, null])).rows).toEqual([{ reference_no: reference }]);
-    expect((await search([reference.slice(5, 15).toLowerCase(), "pending", null, null])).rows).toEqual([{ reference_no: reference }]);
+    const search = (args: unknown[]) => asUser<{ referenceNo: string }>(registrarId,
+      `select "referenceNo" from public.search_registrar_applications($1::text, $2::text, $3::date, $4::date)`, args);
+    expect((await search(["example, test", null, null, null])).rows).toEqual([{ referenceNo: reference }]);
+    expect((await search([reference.slice(5, 15).toLowerCase(), "pending", null, null])).rows).toEqual([{ referenceNo: reference }]);
     expect((await search(["%", null, null, null])).rows).toEqual([]);
     expect((await search([null, "complete", null, null])).rows).toEqual([]);
     expect((await search([null, null, "2000-01-01", "2000-01-02"])).rows).toEqual([]);
     await expect(search([null, "approved", null, null])).rejects.toMatchObject({ code: "22023" });
-    for (const userId of [adminId, teacherId, resetId, ""]) {
+    for (const userId of [contentAdminId, teacherId, resetId, ""]) {
       await expect(asUser(userId, "select * from public.search_registrar_applications()")).rejects.toMatchObject({ code: "42501" });
     }
   });
@@ -249,12 +201,14 @@ describe("staff authorization migrations", () => {
     const { rows: [{ detail }] } = await asUser<{ detail: Record<string, unknown> }>(registrarId,
       "select public.get_registrar_application($1) as detail", [reference]);
     expect(detail).toMatchObject({
-      reference_no: reference, surname: "Example", grade_level: "Grade 7", applicant_type: "new", school_year: "2026-2027",
-      guardians: [{ relationship: "guardian", full_name: "Guardian Example" }], documents: [], requirement_checks: {},
+      referenceNo: reference, lastName: "Example", gradeLevel: "Grade 7", department: "jhs", applicantType: "new",
+      schoolYearStart: 2026, schoolYearEnd: 2027, houseStreet: "12 Test Street", cityMunicipality: "Taguig",
+      guardians: [{ relationship: "guardian", lastName: "Example", firstName: "Guardian", messengerAccount: "Example Guardian" }],
+      documents: [], requirementChecks: {},
     });
-    expect(detail).not.toHaveProperty("submitter_ip_hash");
+    expect(detail).not.toHaveProperty("submitterIpHash");
     expect((await asUser(registrarId, "select public.get_registrar_application('SNCS-UNKNOWN') as detail")).rows).toEqual([{ detail: null }]);
-    await expect(asUser(adminId, "select public.get_registrar_application($1)", [reference])).rejects.toMatchObject({ code: "42501" });
+    await expect(asUser(contentAdminId, "select public.get_registrar_application($1)", [reference])).rejects.toMatchObject({ code: "42501" });
   });
 
   it("records requirement checks, status changes and confirmed emails in the audit trail", async () => {
@@ -262,32 +216,59 @@ describe("staff authorization migrations", () => {
     await expect(asUser(registrarId, "select public.set_application_requirement($1, 'Bad Key', true)", [reference])).rejects.toMatchObject({ code: "22023" });
     await expect(asUser(registrarId, "select public.update_application_status($1, 'pending', null)", [reference])).rejects.toMatchObject({ code: "22023" });
     await expect(asUser(registrarId, "select public.update_application_status('SNCS-UNKNOWN', 'complete', null)")).rejects.toMatchObject({ code: "P0002" });
-    await expect(asUser(adminId, "select public.update_application_status($1, 'complete', null)", [reference])).rejects.toMatchObject({ code: "42501" });
+    await expect(asUser(contentAdminId, "select public.update_application_status($1, 'complete', null)", [reference])).rejects.toMatchObject({ code: "42501" });
 
     const update = (remarks: string) => asUser<{ result: unknown }>(registrarId,
       "select public.update_application_status($1, 'incomplete', $2) as result", [reference, remarks]);
-    expect((await update("  Missing PSA copy  ")).rows).toEqual([{ result: { status: "incomplete", registrar_remarks: "Missing PSA copy", changed: true } }]);
-    expect((await update("Missing PSA copy")).rows).toEqual([{ result: { status: "incomplete", registrar_remarks: "Missing PSA copy", changed: false } }]);
+    expect((await update("  Missing PSA copy  ")).rows).toEqual([{ result: { status: "incomplete", registrarRemarks: "Missing PSA copy", changed: true } }]);
+    expect((await update("Missing PSA copy")).rows).toEqual([{ result: { status: "incomplete", registrarRemarks: "Missing PSA copy", changed: false } }]);
     await asUser(registrarId, "select public.record_status_email($1, 'incomplete', true)", [reference]);
 
     const { rows: [{ detail }] } = await asUser<{ detail: Record<string, unknown> }>(registrarId,
       "select public.get_registrar_application($1) as detail", [reference]);
-    expect(detail).toMatchObject({ status: "incomplete", registrar_remarks: "Missing PSA copy", requirement_checks: { "psa-birth-certificate": true } });
-    expect((await db.query(`select action, old_value, new_value,
-        actor_user_id = (select id from public.users where auth_user_id = $1) as by_registrar
-      from public.audit_logs where entity_type = 'enrollment_applications' order by id`, [registrarId])).rows).toEqual([
-      { action: "application.requirement_check", old_value: null, new_value: { requirement: "psa-birth-certificate", received: true }, by_registrar: true },
-      { action: "application.status_change", old_value: { status: "pending", registrar_remarks: null },
-        new_value: { status: "incomplete", registrar_remarks: "Missing PSA copy" }, by_registrar: true },
-      { action: "application.status_email", old_value: null, new_value: { status: "incomplete" }, by_registrar: true },
+    expect(detail).toMatchObject({ status: "incomplete", registrarRemarks: "Missing PSA copy", requirementChecks: { "psa-birth-certificate": true } });
+    expect((await db.query(`select "action", "oldValue", "newValue",
+        "performedBy" = (select "userId" from public."users" where "authUserId" = $1) as "byRegistrar"
+      from public."auditLogs" where "entityType" = 'enrollmentApplications' order by "auditLogId"`, [registrarId])).rows).toEqual([
+      { action: "application.requirement_check", oldValue: null, newValue: { requirementKey: "psa-birth-certificate", isReceived: true }, byRegistrar: true },
+      { action: "application.status_change", oldValue: { status: "pending", registrarRemarks: null },
+        newValue: { status: "incomplete", registrarRemarks: "Missing PSA copy" }, byRegistrar: true },
+      { action: "application.status_email", oldValue: null, newValue: { status: "incomplete" }, byRegistrar: true },
     ]);
   });
 
   it("keeps browser sessions away from the enrollment tables", async () => {
-    for (const table of ["enrollment_applications", "application_guardians", "application_documents", "application_requirement_checks", "audit_logs"]) {
-      await expect(asUser(registrarId, `select * from public.${table}`)).rejects.toMatchObject({ code: "42501" });
+    for (const table of ["enrollmentApplications", "applicationGuardians", "applicationDocuments", "applicationRequirementChecks", "auditLogs"]) {
+      await expect(asUser(registrarId, `select * from public."${table}"`)).rejects.toMatchObject({ code: "42501" });
     }
-    await expect(asUser(registrarId, "update public.enrollment_applications set status = 'complete'")).rejects.toMatchObject({ code: "42501" });
+    await expect(asUser(registrarId, `update public."enrollmentApplications" set "status" = 'complete'`)).rejects.toMatchObject({ code: "42501" });
+    await expect(db.transaction(async (tx) => {
+      await tx.exec("set local role anon");
+      await tx.query(`select * from public."enrollmentApplications"`);
+    })).rejects.toMatchObject({ code: "42501" });
   });
   // Manage Enrollment Application Tests END
+
+  // Manage Website Content Tests START
+  it("lets Super Admins and Content Admins publish website content that visitors can then read", async () => {
+    const save = (userId: string, slug: string) => asUser<{ id: string }>(userId,
+      "select public.cms_save_content(null, 'announcement', 'Enrollment opens', $1, 'Short', 'Body') as id", [slug]);
+    await expect(save(accountAdminId, "denied")).rejects.toMatchObject({ code: "42501" });
+    await expect(save(registrarId, "denied")).rejects.toMatchObject({ code: "42501" });
+    const { rows: [{ id }] } = await save(contentAdminId, "enrollment-opens");
+    const visible = () => db.transaction(async (tx) => {
+      await tx.exec("set local role anon");
+      return (await tx.query(`select "title" from public."cmsContent"`)).rows;
+    });
+    expect(await visible()).toEqual([]);
+    await asUser(superAdminId, "select public.cms_set_status('content', $1, 'published')", [id]);
+    expect(await visible()).toEqual([{ title: "Enrollment opens" }]);
+    await asUser(contentAdminId, "select public.cms_trash('content', $1)", [id]);
+    expect(await visible()).toEqual([]);
+    await expect(asUser(contentAdminId, "select public.cms_delete('content', 999)")).rejects.toMatchObject({ code: "P0002" });
+    await asUser(contentAdminId, "select public.cms_delete('content', $1)", [id]);
+    expect((await db.query<{ action: string }>(`select "action" from public."auditLogs" where "entityType" = 'cmsContent' order by "auditLogId"`)).rows.map((row) => row.action))
+      .toEqual(["cms.create", "cms.status", "cms.trash", "cms.delete"]);
+  });
+  // Manage Website Content Tests END
 });

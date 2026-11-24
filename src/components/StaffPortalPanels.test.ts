@@ -18,9 +18,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each(["registrar", "academic_coordinator"])("creates a %s account and displays it after reloading the list", async (role) => {
+const staffRow = (fields: Record<string, unknown>) => ({ middleName: null, suffix: null, adminType: null, status: "active", ...fields });
+
+it.each(["registrar", "academicCoordinator", "contentAdmin"])("creates a %s account and displays it after reloading the list", async (role) => {
+  const stored = role === "contentAdmin" ? { role: "admin", adminType: role } : { role };
   client.rpc.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({
-    data: [{ id: "1", full_name: "Registrar Example", email: "registrar@example.com", role, account_status: "active" }],
+    data: [staffRow({ userId: "1", firstName: "Registrar", lastName: "Example", email: "registrar@example.com", ...stored })],
     error: null,
   });
   client.auth.getSession.mockResolvedValue({ data: { session: { access_token: "test-token" } }, error: null });
@@ -29,7 +32,9 @@ it.each(["registrar", "academic_coordinator"])("creates a %s account and display
   const wrapper = mount(StaffAccountsPanel);
   try {
     await flushPromises();
-    await wrapper.get('input[required]:not([type])').setValue("Registrar Example");
+    const [first, last] = wrapper.findAll('input[required]:not([type])');
+    await first.setValue("Registrar");
+    await last.setValue("Example");
     await wrapper.get('input[type="email"]').setValue("registrar@example.com");
     await wrapper.get('input[type="password"]').setValue("test-password");
     await wrapper.get("form select").setValue(role);
@@ -40,7 +45,9 @@ it.each(["registrar", "academic_coordinator"])("creates a %s account and display
       headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
       body: expect.stringContaining(`"role":"${role}"`),
     }));
+    expect(JSON.parse(request.mock.calls[0][1].body)).toMatchObject({ firstName: "Registrar", lastName: "Example" });
     expect(wrapper.get("tbody").text()).toContain("Registrar Example");
+    if (role === "contentAdmin") expect(wrapper.get("tbody").text()).toContain("Content Admin");
     expect(wrapper.get<HTMLInputElement>('input[type="password"]').element.value).toBe("");
   } finally {
     wrapper.unmount();
@@ -48,16 +55,16 @@ it.each(["registrar", "academic_coordinator"])("creates a %s account and display
 });
 
 it("submits an Academic Coordinator role assignment for an existing account", async () => {
-  const account = { id: "2", full_name: "Coordinator Example", email: "coordinator@example.com", role: "teacher", account_status: "active" };
+  const account = staffRow({ userId: "2", firstName: "Coordinator", lastName: "Example", email: "coordinator@example.com", role: "teacher" });
   client.rpc.mockResolvedValue({ data: [account], error: null });
   const wrapper = mount(StaffAccountsPanel);
   try {
     await flushPromises();
     await wrapper.get("tbody button").trigger("click");
-    await wrapper.get('select[aria-label="Role for Coordinator Example"]').setValue("academic_coordinator");
+    await wrapper.get('select[aria-label="Role for Coordinator Example"]').setValue("academicCoordinator");
     await wrapper.get("tbody button").trigger("click");
     await flushPromises();
-    expect(client.rpc).toHaveBeenCalledWith("assign_staff_role", { p_staff_id: "2", p_role: "academic_coordinator" });
+    expect(client.rpc).toHaveBeenCalledWith("assign_staff_role", { p_staff_id: "2", p_role: "academicCoordinator" });
   } finally {
     wrapper.unmount();
   }
@@ -65,7 +72,7 @@ it("submits an Academic Coordinator role assignment for an existing account", as
 
 it("searches enrollment applications through the Registrar RPC with every filter", async () => {
   client.rpc.mockResolvedValue({
-    data: [{ reference_no: "SNCS-TEST01", first_name: "Test", surname: "Example", grade_level: "Grade 7", status: "pending", submitted_at: "2026-11-14T00:00:00Z" }],
+    data: [{ referenceNo: "SNCS-TEST01", firstName: "Test", middleName: null, lastName: "Example", suffix: null, gradeLevel: "Grade 7", status: "pending", submittedAt: "2026-11-14T00:00:00Z" }],
     error: null,
   });
   const wrapper = mount(RegistrarApplicationsPanel);
@@ -100,7 +107,7 @@ it("shows access denied when the session is not a Registrar", async () => {
 });
 
 it("shows live status counts and filters the list when a status tile is chosen", async () => {
-  const row = (status: string) => ({ reference_no: `SNCS-${status}`, first_name: "Test", surname: "Example", grade_level: "Grade 7", status, submitted_at: "2026-11-14T00:00:00Z" });
+  const row = (status: string) => ({ referenceNo: `SNCS-${status}`, firstName: "Test", middleName: null, lastName: "Example", suffix: null, gradeLevel: "Grade 7", status, submittedAt: "2026-11-14T00:00:00Z" });
   client.rpc.mockImplementation(async (_name: string, args: { p_status: string | null }) => ({
     data: args.p_status === "pending" ? [row("pending"), row("pending"), row("pending")]
       : args.p_status === "for_review" ? [row("for_review")]
@@ -132,7 +139,7 @@ it("shows live status counts and filters the list when a status tile is chosen",
 
 it("shows 25+ when a status has more than one page of applications", async () => {
   const rows = Array.from({ length: 26 }, (_, index) => ({
-    reference_no: `SNCS-${index}`, first_name: "Test", surname: "Example", grade_level: "Grade 7", status: "pending", submitted_at: "2026-11-14T00:00:00Z",
+    referenceNo: `SNCS-${index}`, firstName: "Test", middleName: null, lastName: "Example", suffix: null, gradeLevel: "Grade 7", status: "pending", submittedAt: "2026-11-14T00:00:00Z",
   }));
   client.rpc.mockImplementation(async (_name: string, args: { p_status: string | null }) => ({
     data: args.p_status === "pending" || !args.p_status ? rows : [], error: null,

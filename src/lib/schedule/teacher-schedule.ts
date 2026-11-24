@@ -9,21 +9,21 @@ import { getStaffSupabaseClient } from "@/lib/supabase";
 export const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
 export type ScheduleEntry = {
-  day_of_week: number; // 1 = Monday … 6 = Saturday
-  start_time: string; // "HH:MM", 24-hour
-  end_time: string;
+  dayOfWeek: number; // 1 = Monday … 6 = Saturday
+  startTime: string; // "HH:MM", 24-hour
+  endTime: string;
   subject: string;
   section: string;
-  grade_level: number;
-  strand: string | null;
+  gradeLevel: string; // "Grade 7"
+  strands: string | null;
   room: string | null;
-  is_fixed: boolean;
+  isFixed: boolean;
 };
 
 export type TeacherSchedule = {
   linked: boolean;
-  teacher_name?: string;
-  run: { school_year: string; term: string; published_at: string | null } | null;
+  teacherName?: string;
+  run: { schoolYearStart: number; schoolYearEnd: number; term: string; publishedAt: string | null } | null;
   entries: ScheduleEntry[];
 };
 
@@ -54,14 +54,14 @@ export function formatTime(time: string): string {
 
 export function groupByDay(entries: ScheduleEntry[]) {
   return weekdays
-    .map((name, index) => ({ day: index + 1, name, entries: entries.filter((entry) => entry.day_of_week === index + 1) }))
+    .map((name, index) => ({ day: index + 1, name, entries: entries.filter((entry) => entry.dayOfWeek === index + 1) }))
     .filter((group, index) => group.entries.length > 0 || index < 5); // Saturday only when it has classes
 }
 
 export function weeklyMinutes(entries: ScheduleEntry[]): number {
   return entries.reduce((total, entry) => {
-    const [sh, sm] = entry.start_time.split(":").map(Number);
-    const [eh, em] = entry.end_time.split(":").map(Number);
+    const [sh, sm] = entry.startTime.split(":").map(Number);
+    const [eh, em] = entry.endTime.split(":").map(Number);
     return total + (eh * 60 + em) - (sh * 60 + sm);
   }, 0);
 }

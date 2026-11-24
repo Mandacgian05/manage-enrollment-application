@@ -16,16 +16,17 @@ export function isSafePdfPath(path: string): boolean {
 export function parsePublicResource(value: unknown): PublicResource | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
-  const id = typeof row.id === "number" && Number.isSafeInteger(row.id) && row.id > 0
-    ? String(row.id) : typeof row.id === "string" && /^[1-9]\d*$/.test(row.id) ? row.id : null;
+  const rawId = row.resourceId;
+  const id = typeof rawId === "number" && Number.isSafeInteger(rawId) && rawId > 0
+    ? String(rawId) : typeof rawId === "string" && /^[1-9]\d*$/.test(rawId) ? rawId : null;
   if (!id || row.status !== "published" || row.visibility !== "public"
     || typeof row.title !== "string" || !row.title.trim()
     || typeof row.category !== "string" || !row.category.trim()
-    || typeof row.storage_path !== "string" || !isSafePdfPath(row.storage_path)
-    || typeof row.file_size_bytes !== "number" || !Number.isSafeInteger(row.file_size_bytes)
-    || row.file_size_bytes < 5 || row.file_size_bytes > MAX_PDF_BYTES) return null;
+    || typeof row.storagePath !== "string" || !isSafePdfPath(row.storagePath)
+    || typeof row.fileSizeBytes !== "number" || !Number.isSafeInteger(row.fileSizeBytes)
+    || row.fileSizeBytes < 5 || row.fileSizeBytes > MAX_PDF_BYTES) return null;
   return { id, title: row.title.trim(), category: row.category.trim(),
-    storagePath: row.storage_path, fileSizeBytes: row.file_size_bytes };
+    storagePath: row.storagePath, fileSizeBytes: row.fileSizeBytes };
 }
 
 export function formatFileSize(bytes: number): string {
