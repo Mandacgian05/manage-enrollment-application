@@ -3,7 +3,7 @@ import { parsePublicResource, type PublicResource } from "./model";
 
 export async function getPublicResources(signal: AbortSignal): Promise<PublicResource[]> {
   const { data, error } = await getPublicSupabaseClient().from("resources")
-    .select("id,title,category,storage_path,file_size_bytes,status,visibility")
+    .select("resourceId,title,category,storagePath,fileSizeBytes,status,visibility")
     .eq("status", "published").eq("visibility", "public")
     .order("category").order("title").abortSignal(signal);
   if (error || !data) throw new Error("Resources could not be loaded.");

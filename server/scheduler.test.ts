@@ -12,7 +12,7 @@ const app=()=>createSchedulerApi(env,createClient,forward);
 const path='/api/scheduler?path='+encodeURIComponent('/api/workspaces');
 beforeEach(()=>{
   vi.clearAllMocks();getUser.mockResolvedValue({data:{user:{id:'coordinator'}},error:null});
-  rpc.mockResolvedValue({data:'academic_coordinator',error:null});
+  rpc.mockResolvedValue({data:'academicCoordinator',error:null});
   forward.mockResolvedValue(new Response(JSON.stringify([]),{headers:{'content-type':'application/json'}}));
 });
 

@@ -68,7 +68,7 @@ describe("staff login and protected routes", () => {
 
   it.each([
     ["admin", "/admin"], ["registrar", "/registrar"], ["teacher", "/teacher"],
-    ["academic_coordinator", "/academic-coordinator"],
+    ["academicCoordinator", "/academic-coordinator"],
   ] as const)("opens the guarded dashboard after a valid %s login", async (role, path) => {
     vi.mocked(signInStaff).mockResolvedValue(role);
     vi.mocked(getStaffPortalRole).mockResolvedValue(role);
@@ -114,9 +114,9 @@ describe("staff login and protected routes", () => {
     ["teacher", "/academic-coordinator"],
     ["registrar", "/academic-coordinator"],
     ["admin", "/academic-coordinator"],
-    ["academic_coordinator", "/admin"],
-    ["academic_coordinator", "/registrar"],
-    ["academic_coordinator", "/teacher"],
+    ["academicCoordinator", "/admin"],
+    ["academicCoordinator", "/registrar"],
+    ["academicCoordinator", "/teacher"],
   ] as const)("redirects a %s session trying to open %s", async (role, path) => {
     vi.mocked(getStaffPortalRole).mockResolvedValue(role);
     await router.push(path);

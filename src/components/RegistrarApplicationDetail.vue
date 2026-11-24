@@ -11,8 +11,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
-  applicationStatuses, getApplication, processingStatuses, RegistrarError, sendStatusEmail, setRequirement, updateStatus,
-  type ApplicationDetail, type ProcessingStatus,
+  applicationStatuses, formatAddress, formatSchoolPlace, getApplication, personName, processingStatuses, RegistrarError,
+  schoolYearLabel, sendStatusEmail, setRequirement, updateStatus, type ApplicationDetail, type ProcessingStatus,
 } from "@/lib/enrollment/registrar";
 import { buildPrintDocument, openPrintableDocument, printDocument } from "@/lib/enrollment/print-form";
 import { requirementsFor, splitChecklist, summarizeChecklist } from "@/lib/enrollment/requirements";
@@ -46,17 +46,16 @@ const dateTime = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeSty
 const dateOnly = new Intl.DateTimeFormat("en-PH", { dateStyle: "long", timeZone: "Asia/Manila" });
 
 const requirements = computed(() => application.value ? requirementsFor(application.value) : []);
-const checklist = computed(() => summarizeChecklist(requirements.value, application.value?.requirement_checks ?? {}));
-const emailChecklist = computed(() => splitChecklist(requirements.value, application.value?.requirement_checks ?? {}));
-const fullName = computed(() => application.value
-  ? [application.value.first_name, application.value.middle_name, application.value.surname].filter(Boolean).join(" ") : "");
+const checklist = computed(() => summarizeChecklist(requirements.value, application.value?.requirementChecks ?? {}));
+const emailChecklist = computed(() => splitChecklist(requirements.value, application.value?.requirementChecks ?? {}));
+const fullName = computed(() => application.value ? personName(application.value) : "");
 const statusChanged = computed(() => !!application.value && (newStatus.value !== application.value.status
-  || newRemarks.value.trim() !== (application.value.registrar_remarks ?? "")));
+  || newRemarks.value.trim() !== (application.value.registrarRemarks ?? "")));
 const printedAt = ref(new Date());
 const progress = computed(() => checklist.value.required
   ? Math.round((checklist.value.received / checklist.value.required) * 100) : 0);
 const subtitle = computed(() => application.value
-  ? `${application.value.grade_level}, ${applicantTypes[application.value.applicant_type].toLowerCase()} applicant, submitted ${dateTime.format(new Date(application.value.submitted_at))}`
+  ? `${application.value.gradeLevel}, ${applicantTypes[application.value.applicantType].toLowerCase()} applicant, submitted ${dateTime.format(new Date(application.value.submittedAt))}`
   : "");
 
 // Move keyboard focus into the panel and stop the page behind it from scrolling.
@@ -90,7 +89,7 @@ async function load() {
     const record = await getApplication(props.reference);
     application.value = record;
     newStatus.value = record.status === "pending" ? "for_review" : record.status;
-    newRemarks.value = record.registrar_remarks ?? "";
+    newRemarks.value = record.registrarRemarks ?? "";
   } catch (error) {
     application.value = undefined;
     if (error instanceof RegistrarError && error.kind === "not-found") notFound.value = true;
@@ -107,14 +106,14 @@ async function toggleRequirement(key: string, received: boolean) {
   if (!application.value) return;
   checklistSaving.value = key;
   checklistError.value = "";
-  const previous = application.value.requirement_checks[key];
-  application.value.requirement_checks = { ...application.value.requirement_checks, [key]: received };
+  const previous = application.value.requirementChecks[key];
+  application.value.requirementChecks = { ...application.value.requirementChecks, [key]: received };
   try {
-    await setRequirement(application.value.reference_no, key, received);
+    await setRequirement(application.value.referenceNo, key, received);
   } catch (error) {
-    const checks = { ...application.value.requirement_checks };
+    const checks = { ...application.value.requirementChecks };
     if (previous === undefined) delete checks[key]; else checks[key] = previous;
-    application.value.requirement_checks = checks;
+    application.value.requirementChecks = checks;
     checklistError.value = error instanceof RegistrarError ? error.message : "Could not save the checklist.";
   } finally {
     checklistSaving.value = undefined;
@@ -138,12 +137,12 @@ async function confirmStatusUpdate() {
   saving.value = true;
   saveError.value = "";
   try {
-    const result = await updateStatus(application.value.reference_no, newStatus.value, newRemarks.value);
+    const result = await updateStatus(application.value.referenceNo, newStatus.value, newRemarks.value);
     application.value.status = result.status;
-    application.value.registrar_remarks = result.registrar_remarks;
+    application.value.registrarRemarks = result.registrarRemarks;
     confirming.value = false;
     saveNotice.value = "Status saved and recorded in the audit trail.";
-    emit("updated", application.value.reference_no, result.status);
+    emit("updated", application.value.referenceNo, result.status);
     // Never email automatically: offer a preview the Registrar must confirm.
     if (result.changed) openEmailPrompt();
   } catch (error) {
@@ -163,7 +162,7 @@ async function confirmEmail() {
   if (!application.value) return;
   emailState.value = "sending";
   try {
-    await sendStatusEmail(application.value.reference_no);
+    await sendStatusEmail(application.value.referenceNo);
     emailState.value = "sent";
     emailPrompt.value = false;
   } catch {
@@ -181,7 +180,7 @@ async function printableDocument(withPrintButton: boolean) {
   printedAt.value = new Date();
   await nextTick();
   if (!printSource.value || !application.value) return undefined;
-  return buildPrintDocument(printSource.value.innerHTML, `Verification form ${application.value.reference_no}`, withPrintButton);
+  return buildPrintDocument(printSource.value.innerHTML, `Verification form ${application.value.referenceNo}`, withPrintButton);
 }
 
 async function printForm() {
@@ -243,12 +242,12 @@ async function openPrintableForm() {
             <section aria-labelledby="enrollment-details">
               <h3 id="enrollment-details">Enrollment details</h3>
               <dl class="fields">
-                <div><dt>School year</dt><dd>{{ application.school_year }}</dd></div>
+                <div><dt>School year</dt><dd>{{ schoolYearLabel(application) }}</dd></div>
                 <div><dt>School level</dt><dd>{{ departments[application.department] }}</dd></div>
-                <div><dt>Grade level</dt><dd>{{ application.grade_level }}</dd></div>
-                <div v-if="application.strand"><dt>Strand</dt><dd>{{ application.strand }}</dd></div>
-                <div><dt>Student status</dt><dd>{{ applicantTypes[application.applicant_type] }}</dd></div>
-                <div><dt>Mode of payment</dt><dd>{{ payments[application.mode_of_payment] ?? application.mode_of_payment }}</dd></div>
+                <div><dt>Grade level</dt><dd>{{ application.gradeLevel }}</dd></div>
+                <div v-if="application.strandCode"><dt>Strand</dt><dd>{{ application.strandCode }}</dd></div>
+                <div><dt>Student status</dt><dd>{{ applicantTypes[application.applicantType] }}</dd></div>
+                <div><dt>Mode of payment</dt><dd>{{ payments[application.paymentMode] ?? application.paymentMode }}</dd></div>
               </dl>
             </section>
 
@@ -256,15 +255,15 @@ async function openPrintableForm() {
               <h3 id="student-details">Student information</h3>
               <dl class="fields">
                 <div><dt>Full name</dt><dd>{{ fullName }}</dd></div>
-                <div><dt>Birthday</dt><dd>{{ birthDate(application.birth_date) }}</dd></div>
-                <div><dt>Gender</dt><dd class="capitalize">{{ application.gender }}</dd></div>
-                <div><dt>Place of birth</dt><dd>{{ application.place_of_birth }}</dd></div>
+                <div><dt>Birthday</dt><dd>{{ birthDate(application.birthDate) }}</dd></div>
+                <div><dt>Sex</dt><dd class="capitalize">{{ application.sex }}</dd></div>
+                <div><dt>Place of birth</dt><dd>{{ application.birthPlace }}</dd></div>
                 <div><dt>Religion</dt><dd>{{ application.religion }}</dd></div>
-                <div><dt>Contact number</dt><dd>{{ application.contact_numbers }}</dd></div>
+                <div><dt>Mobile number</dt><dd>{{ application.primaryContactNumber }}</dd></div>
+                <div><dt>Other mobile number</dt><dd>{{ application.secondaryContactNumber || "—" }}</dd></div>
                 <div><dt>Email</dt><dd>{{ application.email }}</dd></div>
-                <div><dt>Parent’s email address</dt><dd>{{ application.parent_email || "—" }}</dd></div>
-                <div><dt>Parent/guardian’s Messenger account</dt><dd>{{ application.guardian_messenger }}</dd></div>
-                <div class="wide"><dt>Complete address</dt><dd>{{ application.complete_address }}</dd></div>
+                <div><dt>Parent’s email address</dt><dd>{{ application.parentEmail || "—" }}</dd></div>
+                <div class="wide"><dt>Home address</dt><dd>{{ formatAddress(application) }}</dd></div>
               </dl>
             </section>
 
@@ -275,8 +274,9 @@ async function openPrintableForm() {
                 <div v-for="guardian in application.guardians" :key="guardian.relationship">
                   <dt>{{ relationships[guardian.relationship] }}</dt>
                   <dd>
-                    {{ guardian.full_name }}<br />
-                    <span class="muted small">{{ guardian.occupation || "Occupation not given" }}, {{ guardian.contact_number || "no contact number" }}</span>
+                    {{ personName(guardian) }}<br />
+                    <span class="muted small">{{ guardian.occupation || "Occupation not given" }}, {{ guardian.contactNumber || "no contact number" }}</span><br />
+                    <span class="muted small">Email: {{ guardian.email || "—" }} · Messenger: {{ guardian.messengerAccount || "—" }}</span>
                   </dd>
                 </div>
               </dl>
@@ -285,8 +285,8 @@ async function openPrintableForm() {
             <section aria-labelledby="school-details">
               <h3 id="school-details">Last school attended</h3>
               <dl class="fields">
-                <div><dt>Former school’s name</dt><dd>{{ application.last_school_name || "—" }}</dd></div>
-                <div class="wide"><dt>Former school’s complete address</dt><dd>{{ application.last_school_address || "—" }}</dd></div>
+                <div><dt>Former school’s name</dt><dd>{{ application.lastSchoolName || "—" }}</dd></div>
+                <div class="wide"><dt>Former school’s location</dt><dd>{{ formatSchoolPlace(application) || "—" }}</dd></div>
               </dl>
             </section>
 
@@ -296,8 +296,8 @@ async function openPrintableForm() {
                 No documents were uploaded. Online uploads are disabled; the applicant presents requirements at the Registrar’s Office.
               </p>
               <ul v-else class="documents">
-                <li v-for="document in application.documents" :key="document.id">
-                  {{ document.document_type }} <span class="muted">(uploaded {{ dateTime.format(new Date(document.uploaded_at)) }})</span>
+                <li v-for="document in application.documents" :key="document.documentId">
+                  {{ document.requirementKey }} <span class="muted">(uploaded {{ dateTime.format(new Date(document.uploadedAt)) }})</span>
                 </li>
               </ul>
             </section>
@@ -308,16 +308,16 @@ async function openPrintableForm() {
               <h3 id="checklist-heading">Requirement checklist</h3>
               <p class="muted small">
                 {{ checklist.received }} of {{ checklist.required }} required items received for a
-                {{ applicantTypes[application.applicant_type].toLowerCase() }} {{ application.grade_level }} applicant.
+                {{ applicantTypes[application.applicantType].toLowerCase() }} {{ application.gradeLevel }} applicant.
                 Tick each requirement as it is presented onsite.
               </p>
               <p v-if="checklistError" class="error" role="alert">{{ checklistError }}</p>
               <ul class="checklist">
                 <li v-for="item in requirements" :key="item.key">
-                  <label :class="{ done: application.requirement_checks[item.key] === true }">
+                  <label :class="{ done: application.requirementChecks[item.key] === true }">
                     <input
                       type="checkbox"
-                      :checked="application.requirement_checks[item.key] === true"
+                      :checked="application.requirementChecks[item.key] === true"
                       :disabled="checklistSaving === item.key"
                       @change="toggleRequirement(item.key, ($event.target as HTMLInputElement).checked)"
                     />
@@ -379,9 +379,9 @@ async function openPrintableForm() {
               <p class="small">Review the message below. Nothing is sent until you confirm.</p>
               <div class="email-preview">
                 <p><strong>To:</strong> {{ application.email }}</p>
-                <p><strong>Subject:</strong> Enrollment Application Update - [{{ application.reference_no }}]</p>
+                <p><strong>Subject:</strong> Enrollment Application Update - [{{ application.referenceNo }}]</p>
                 <p><strong>Status:</strong> {{ applicationStatuses[application.status] }}</p>
-                <p v-if="application.registrar_remarks"><strong>Remarks:</strong> {{ application.registrar_remarks }}</p>
+                <p v-if="application.registrarRemarks"><strong>Remarks:</strong> {{ application.registrarRemarks }}</p>
                 <p><strong>Requirements received:</strong></p>
                 <ul v-if="emailChecklist.received.length"><li v-for="item in emailChecklist.received" :key="item.key">{{ item.label }}</li></ul>
                 <p v-else class="muted">None recorded yet.</p>
@@ -416,47 +416,47 @@ async function openPrintableForm() {
         <h1>Sto. Niño Catholic School, Inc.</h1>
         <p>Office of the Registrar · Enrollment Verification Form</p>
         <p class="print-meta">
-          <span>Reference no.: <strong>{{ application.reference_no }}</strong></span>
+          <span>Reference no.: <strong>{{ application.referenceNo }}</strong></span>
           <span>Status: {{ applicationStatuses[application.status] }}</span>
           <span>Printed: {{ dateTime.format(printedAt) }}</span>
         </p>
       </header>
       <h2>Enrollment details</h2>
       <table>
-        <tr><th>School year</th><td>{{ application.school_year }}</td><th>School level</th><td>{{ departments[application.department] }}</td></tr>
-        <tr><th>Grade level</th><td>{{ application.grade_level }}</td><th>Strand</th><td>{{ application.strand || "—" }}</td></tr>
-        <tr><th>Student status</th><td>{{ applicantTypes[application.applicant_type] }}</td><th>Mode of payment</th><td>{{ payments[application.mode_of_payment] ?? application.mode_of_payment }}</td></tr>
-        <tr><th>Submitted</th><td colspan="3">{{ dateTime.format(new Date(application.submitted_at)) }}</td></tr>
+        <tr><th>School year</th><td>{{ schoolYearLabel(application) }}</td><th>School level</th><td>{{ departments[application.department] }}</td></tr>
+        <tr><th>Grade level</th><td>{{ application.gradeLevel }}</td><th>Strand</th><td>{{ application.strandCode || "—" }}</td></tr>
+        <tr><th>Student status</th><td>{{ applicantTypes[application.applicantType] }}</td><th>Mode of payment</th><td>{{ payments[application.paymentMode] ?? application.paymentMode }}</td></tr>
+        <tr><th>Submitted</th><td colspan="3">{{ dateTime.format(new Date(application.submittedAt)) }}</td></tr>
       </table>
       <h2>Student information</h2>
       <table>
         <tr><th>Full name</th><td colspan="3">{{ fullName }}</td></tr>
-        <tr><th>Birthday</th><td>{{ birthDate(application.birth_date) }}</td><th>Gender</th><td class="capitalize">{{ application.gender }}</td></tr>
-        <tr><th>Place of birth</th><td>{{ application.place_of_birth }}</td><th>Religion</th><td>{{ application.religion }}</td></tr>
-        <tr><th>Contact number</th><td>{{ application.contact_numbers }}</td><th>Email</th><td>{{ application.email }}</td></tr>
-        <tr><th>Parent’s email address</th><td>{{ application.parent_email || "—" }}</td><th>Messenger account</th><td>{{ application.guardian_messenger }}</td></tr>
-        <tr><th>Address</th><td colspan="3">{{ application.complete_address }}</td></tr>
+        <tr><th>Birthday</th><td>{{ birthDate(application.birthDate) }}</td><th>Sex</th><td class="capitalize">{{ application.sex }}</td></tr>
+        <tr><th>Place of birth</th><td>{{ application.birthPlace }}</td><th>Religion</th><td>{{ application.religion }}</td></tr>
+        <tr><th>Mobile number</th><td>{{ application.primaryContactNumber }}</td><th>Other mobile</th><td>{{ application.secondaryContactNumber || "—" }}</td></tr>
+        <tr><th>Email</th><td>{{ application.email }}</td><th>Parent’s email address</th><td>{{ application.parentEmail || "—" }}</td></tr>
+        <tr><th>Address</th><td colspan="3">{{ formatAddress(application) }}</td></tr>
       </table>
       <h2>Parents and guardian</h2>
       <table class="guardians">
-        <tr><th>Relationship</th><th>Name</th><th>Occupation</th><th>Contact</th></tr>
+        <tr><th>Relationship</th><th>Name</th><th>Occupation</th><th>Contact</th><th>Messenger</th></tr>
         <tr v-for="guardian in application.guardians" :key="guardian.relationship">
-          <td>{{ relationships[guardian.relationship] }}</td><td>{{ guardian.full_name }}</td>
-          <td>{{ guardian.occupation || "—" }}</td><td>{{ guardian.contact_number || "—" }}</td>
+          <td>{{ relationships[guardian.relationship] }}</td><td>{{ personName(guardian) }}</td>
+          <td>{{ guardian.occupation || "—" }}</td><td>{{ guardian.contactNumber || "—" }}</td><td>{{ guardian.messengerAccount || "—" }}</td>
         </tr>
       </table>
       <h2>Last school attended</h2>
       <table>
-        <tr><th>Former school</th><td>{{ application.last_school_name || "—" }}</td><th>Address</th><td>{{ application.last_school_address || "—" }}</td></tr>
+        <tr><th>Former school</th><td>{{ application.lastSchoolName || "—" }}</td><th>Location</th><td>{{ formatSchoolPlace(application) || "—" }}</td></tr>
       </table>
       <h2>Requirements ({{ checklist.received }} of {{ checklist.required }} required received)</h2>
       <ul class="print-checklist">
         <li v-for="item in requirements" :key="item.key">
-          {{ application.requirement_checks[item.key] ? "☑" : "☐" }} {{ item.label }}<span v-if="item.optional"> (if applicable)</span>
+          {{ application.requirementChecks[item.key] ? "☑" : "☐" }} {{ item.label }}<span v-if="item.optional"> (if applicable)</span>
         </li>
       </ul>
       <h2>Registrar remarks</h2>
-      <p class="print-remarks">{{ application.registrar_remarks || "None" }}</p>
+      <p class="print-remarks">{{ application.registrarRemarks || "None" }}</p>
       <div class="print-signatures">
         <div><span></span>Verified by (Registrar’s signature over printed name)</div>
         <div><span></span>Date</div>

@@ -20,50 +20,95 @@ export type ProcessingStatus = (typeof processingStatuses)[number];
 export const searchPageSize = 25;
 
 export type ApplicationSummary = {
-  reference_no: string;
-  first_name: string;
-  surname: string;
-  grade_level: string;
+  referenceNo: string;
+  firstName: string;
+  middleName: string | null;
+  lastName: string;
+  suffix: string | null;
+  gradeLevel: string;
   status: ApplicationStatus;
-  submitted_at: string;
+  submittedAt: string;
 };
 
 export type ApplicationFilters = { query: string; status: ApplicationStatus | ""; from: string; to: string };
 
-export type Guardian = { relationship: "father" | "mother" | "guardian"; full_name: string; occupation: string | null; contact_number: string | null };
-export type ApplicationDocument = { id: number; document_type: string; uploaded_at: string };
+export type Guardian = {
+  relationship: "father" | "mother" | "guardian";
+  lastName: string;
+  firstName: string;
+  middleName: string | null;
+  suffix: string | null;
+  occupation: string | null;
+  contactNumber: string | null;
+  email: string | null;
+  messengerAccount: string | null;
+};
+export type ApplicationDocument = { documentId: number; requirementKey: string; contentType: string; uploadedAt: string };
 
 export type ApplicationDetail = {
-  id: number;
-  reference_no: string;
-  school_year: string;
+  applicationId: number;
+  referenceNo: string;
+  schoolYearStart: number;
+  schoolYearEnd: number;
   department: "preschool" | "grade_school" | "jhs" | "shs";
-  applicant_type: "new" | "old" | "returnee";
-  grade_level: string;
-  strand: string | null;
-  mode_of_payment: string;
-  surname: string;
-  first_name: string;
-  middle_name: string | null;
-  birth_date: string;
-  gender: string;
-  place_of_birth: string;
+  applicantType: "new" | "old" | "returnee";
+  gradeLevel: string;
+  strandCode: string | null;
+  paymentMode: string;
+  lastName: string;
+  firstName: string;
+  middleName: string | null;
+  suffix: string | null;
+  birthDate: string;
+  sex: string;
+  birthPlace: string;
   religion: string;
-  complete_address: string;
-  contact_numbers: string;
+  houseStreet: string;
+  barangay: string;
+  cityMunicipality: string;
+  province: string;
+  zipCode: string | null;
+  primaryContactNumber: string;
+  secondaryContactNumber: string | null;
   email: string;
-  parent_email: string | null;
-  guardian_messenger: string;
-  last_school_name: string | null;
-  last_school_address: string | null;
+  parentEmail: string | null;
+  lastSchoolName: string | null;
+  lastSchoolCityMunicipality: string | null;
+  lastSchoolProvince: string | null;
   status: ApplicationStatus;
-  registrar_remarks: string | null;
-  privacy_consent_at: string;
-  submitted_at: string;
+  registrarRemarks: string | null;
+  privacyConsentAt: string;
+  submittedAt: string;
   guardians: Guardian[];
   documents: ApplicationDocument[];
-  requirement_checks: Record<string, boolean>;
+  requirementChecks: Record<string, boolean>;
 };
+
+/** First, middle, last name and suffix as one display name. */
+export function personName(person: { firstName: string; middleName?: string | null; lastName: string; suffix?: string | null }): string {
+  return [person.firstName, person.middleName, person.lastName, person.suffix].filter(Boolean).join(" ");
+}
+
+/** The split address fields as one line for display and printing. */
+export function formatAddress(application: Pick<ApplicationDetail, "houseStreet" | "barangay" | "cityMunicipality" | "province" | "zipCode">): string {
+  return [application.houseStreet, application.barangay, application.cityMunicipality,
+    [application.province, application.zipCode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+}
+
+/** The former school's city/municipality and province, or an empty string. */
+export function formatSchoolPlace(application: Pick<ApplicationDetail, "lastSchoolCityMunicipality" | "lastSchoolProvince">): string {
+  return [application.lastSchoolCityMunicipality, application.lastSchoolProvince].filter(Boolean).join(", ");
+}
+
+export function schoolYearLabel(application: Pick<ApplicationDetail, "schoolYearStart" | "schoolYearEnd">): string {
+  return `${application.schoolYearStart}-${application.schoolYearEnd}`;
+}
+
+/** Messenger accounts given for any parent or guardian. */
+export function messengerAccounts(application: Pick<ApplicationDetail, "guardians">): string {
+  return application.guardians.filter((guardian) => guardian.messengerAccount)
+    .map((guardian) => guardian.messengerAccount).join(", ");
+}
 
 export class RegistrarError extends Error {
   constructor(public readonly kind: "access" | "not-found" | "invalid" | "unavailable", message: string) {
@@ -110,13 +155,13 @@ export async function updateStatus(reference: string, status: ProcessingStatus, 
     p_reference: reference, p_status: status, p_remarks: remarks,
   });
   if (error) throw toRegistrarError(error);
-  return data as { status: ApplicationStatus; registrar_remarks: string | null; changed: boolean };
+  return data as { status: ApplicationStatus; registrarRemarks: string | null; changed: boolean };
 }
 
 /** Trigger Outbound Status Email: the edge function reads the recipient and status from the database. */
 export async function sendStatusEmail(reference: string) {
   const { error } = await getStaffSupabaseClient().functions.invoke("send-application-status-email", {
-    body: { reference_no: reference },
+    body: { referenceNo: reference },
   });
   if (error) throw new RegistrarError("unavailable", "The status email could not be sent.");
 }
@@ -134,6 +179,6 @@ export async function countApplicationsByStatus(): Promise<Record<ApplicationSta
   return Object.fromEntries(statuses.map((status, index) => {
     const { rows, hasMore } = results[index];
     // Rows are newest first, so the last row is the oldest on this page.
-    return [status, { count: rows.length, more: hasMore, oldest: rows.at(-1)?.submitted_at }];
+    return [status, { count: rows.length, more: hasMore, oldest: rows.at(-1)?.submittedAt }];
   })) as Record<ApplicationStatus, StatusCount>;
 }

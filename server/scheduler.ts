@@ -44,7 +44,7 @@ export function createSchedulerApi(env = process.env, makeClient = createClient,
     if (error || !user) { res.status(error && (!error.status || error.status>=500)?503:401).json({error:'Your staff session could not be verified. Sign in again.'}); return; }
     const role = await client.rpc('get_staff_portal_role');
     if (role.error) { res.status(503).json({error:'Staff access could not be verified. Try again.'}); return; }
-    if (role.data !== 'academic_coordinator') { res.status(403).json({error:'Only the Academic Coordinator can manage scheduling.'}); return; }
+    if (role.data !== 'academicCoordinator') { res.status(403).json({error:'Only the Academic Coordinator can manage scheduling.'}); return; }
     const allowedOrigin = env.APP_ORIGIN;
     if (req.method !== 'GET' && req.get('origin') && req.get('origin') !== allowedOrigin) {
       res.status(403).json({error:'Scheduling changes must come from the school website.'}); return;

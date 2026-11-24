@@ -18,7 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each(["registrar", "academic_coordinator"])("creates a %s account and displays it after reloading the list", async (role) => {
+it.each(["registrar", "academicCoordinator"])("creates a %s account and displays it after reloading the list", async (role) => {
   client.rpc.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({
     data: [{ id: "1", full_name: "Registrar Example", email: "registrar@example.com", role, account_status: "active" }],
     error: null,
@@ -54,10 +54,10 @@ it("submits an Academic Coordinator role assignment for an existing account", as
   try {
     await flushPromises();
     await wrapper.get("tbody button").trigger("click");
-    await wrapper.get('select[aria-label="Role for Coordinator Example"]').setValue("academic_coordinator");
+    await wrapper.get('select[aria-label="Role for Coordinator Example"]').setValue("academicCoordinator");
     await wrapper.get("tbody button").trigger("click");
     await flushPromises();
-    expect(client.rpc).toHaveBeenCalledWith("assign_staff_role", { p_staff_id: "2", p_role: "academic_coordinator" });
+    expect(client.rpc).toHaveBeenCalledWith("assign_staff_role", { p_staff_id: "2", p_role: "academicCoordinator" });
   } finally {
     wrapper.unmount();
   }

@@ -3,7 +3,7 @@
  * Created Date: 20261116
  * View Dynamic Requirement Checklist: the requirements an applicant must present onsite,
  * derived from the same SNCS admission rules shown on the public Admissions page
- * (src/lib/content/admissions.ts). Keys are stored in application_requirement_checks.
+ * (src/lib/content/admissions.ts). Keys are stored in applicationRequirementChecks.
  * Shared by the Registrar portal (src/lib/enrollment/requirements.ts) and the status
  * email edge function, so the checklist on screen, on paper and in the email match.
  * Keep this file free of imports so both Vite and Deno can load it.
@@ -14,12 +14,12 @@
 export type Requirement = { key: string; label: string; optional?: boolean };
 export type ApplicantProfile = {
   department: string;
-  applicant_type: string;
-  grade_level: string;
+  applicantType: string;
+  gradeLevel: string;
   /** From the form's Religion field: chooses baptismal certificate or certificate of dedication. */
   religion?: string | null;
   /** From the form's "Former school's name": a preschooler with a former school brings a report card. */
-  last_school_name?: string | null;
+  lastSchoolName?: string | null;
 };
 
 const commonRequirements: Requirement[] = [
@@ -58,16 +58,16 @@ export function gradeNumber(gradeLevel: string): number | null {
 
 export function requirementsFor(applicant: ApplicantProfile): Requirement[] {
   // Returning (old) students only resubmit their report card.
-  if (applicant.applicant_type === "old") {
+  if (applicant.applicantType === "old") {
     return [{ key: "report-card", label: "Report card submitted to the Admission Office" }];
   }
   const common = commonRequirements.map((item) => item.key === "baptismal-certificate" ? faithDocument(applicant.religion) : item);
 
-  const grade = gradeNumber(applicant.grade_level);
+  const grade = gradeNumber(applicant.gradeLevel);
   if (applicant.department === "preschool" || grade === null) {
-    const kindergarten = /kinder/i.test(applicant.grade_level);
+    const kindergarten = /kinder/i.test(applicant.gradeLevel);
     // A preschooler who attended a school before brings that report card.
-    const attendedSchool = Boolean(applicant.last_school_name?.trim());
+    const attendedSchool = Boolean(applicant.lastSchoolName?.trim());
     return [
       ...(kindergarten ? [entranceExam] : []),
       ...common.map((item) => item.key === "report-card"
@@ -80,7 +80,7 @@ export function requirementsFor(applicant: ApplicantProfile): Requirement[] {
 
   const items = [entranceExam, ...common];
   const entryGrade = grade === 1 || grade === 7 || grade === 11;
-  if (applicant.applicant_type === "new" && entryGrade) {
+  if (applicant.applicantType === "new" && entryGrade) {
     if (grade === 7) items.push(goodMoral, recommendation);
     if (grade === 11) items.push(goodMoral, recommendation, escCertificate, ncaeResult);
     return items;

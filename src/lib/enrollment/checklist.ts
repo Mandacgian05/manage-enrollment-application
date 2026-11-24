@@ -13,10 +13,10 @@ export function applicantProfile(data: Application): ApplicantProfile | null {
   if (!level || !data.gradeLevel || !data.studentStatus) return null;
   return {
     department: level.department,
-    applicant_type: data.studentStatus.toLowerCase(),
-    grade_level: data.gradeLevel,
+    applicantType: data.studentStatus.toLowerCase(),
+    gradeLevel: data.gradeLevel,
     religion: data.religion ?? "",
-    last_school_name: data.previousSchool ?? "",
+    lastSchoolName: data.previousSchool ?? "",
   };
 }
 

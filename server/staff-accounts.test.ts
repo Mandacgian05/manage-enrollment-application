@@ -104,10 +104,10 @@ it("creates a confirmed Auth account with the assigned staff role and verified c
 });
 
 it("allows an authorized manager to provision an Academic Coordinator", async () => {
-  await submit({ ...input, role: "academic_coordinator" }).expect(201);
+  await submit({ ...input, role: "academicCoordinator" }).expect(201);
   expect(client.auth.admin.createUser).toHaveBeenCalledWith(expect.objectContaining({
     app_metadata: { chimera_staff_provisioning: {
-      created_by: user.id, full_name: "Registrar Example", role: "academic_coordinator",
+      created_by: user.id, full_name: "Registrar Example", role: "academicCoordinator",
     } },
   }));
 });

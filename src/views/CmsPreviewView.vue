@@ -72,8 +72,9 @@ onMounted(async () => {
   if (match) section.value = match.id;
   try {
     const { data: { session } } = await getStaffSupabaseClient().auth.getSession();
-    const provisioning = session?.user?.app_metadata?.chimera_staff_provisioning as { full_name?: unknown } | undefined;
-    const name = typeof provisioning?.full_name === "string" ? provisioning.full_name.trim() : "";
+    const provisioning = session?.user?.app_metadata?.chimera_staff_provisioning as Record<string, unknown> | undefined;
+    const name = ["firstName", "lastName"].map((key) => typeof provisioning?.[key] === "string" ? (provisioning[key] as string).trim() : "")
+      .filter(Boolean).join(" ");
     staffName.value = name || session?.user?.email || demoAdmin;
   } catch {
     // Keep the generic name; the route guard has already verified Admin access.

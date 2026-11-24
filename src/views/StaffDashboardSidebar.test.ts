@@ -92,7 +92,7 @@ it("gives a Content Admin the website sections only and hides the staff list", a
 
 it.each([
   ["registrar", ["Overview", "Applications", "Enrollment form"]],
-  ["academic_coordinator", ["Overview", "Teacher loads", "School times", "Check & generate", "Review & publish", "Published timetable"]],
+  ["academicCoordinator", ["Overview", "Teacher loads", "School times", "Check & generate", "Review & publish", "Published timetable"]],
   ["teacher", ["Overview", "My schedule"]],
 ] as const)("shows %s only its own sections", async (role, labels) => {
   await open(role);
@@ -129,7 +129,7 @@ it("shrinks the side panel to icons, keeps every item reachable, and remembers t
 });
 
 it("follows the scheduling workbench: step progress, the open step, and opening steps from the side panel", async () => {
-  await open("academic_coordinator", "Academic Coordinator dashboard");
+  await open("academicCoordinator", "Academic Coordinator dashboard");
   const dots = dashboard!.findAll(".portal-step-dot").map((dot) => [dot.attributes("data-state"), dot.text()]);
   expect(dots).toEqual([["done", "✓"], ["done", "✓"], ["now", "3"], ["todo", "4"]]);
   expect(dashboard!.get(".portal-nav-active").text()).toContain("Check & generate");

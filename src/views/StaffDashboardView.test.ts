@@ -58,8 +58,8 @@ it("leaves the open dashboard when a session expires without refresh", () => {
 });
 
 it('shows scheduling after verified Academic Coordinator access and removes it at expiry',async()=>{
-  await dashboard.setProps({heading:'Academic Coordinator dashboard',role:'academic_coordinator'});
-  getStaffPortalRole.mockResolvedValue('academic_coordinator');
+  await dashboard.setProps({heading:'Academic Coordinator dashboard',role:'academicCoordinator'});
+  getStaffPortalRole.mockResolvedValue('academicCoordinator');
   emit('INITIAL_SESSION',10,'coordinator-id');
   await vi.advanceTimersByTimeAsync(0);await flushPromises();
   expect(dashboard.find('iframe[title="Academic Coordinator scheduling workspace"]').exists()).toBe(true);
@@ -188,8 +188,8 @@ it("does not restore protected records if access resolves after expiry", async (
 it("opens the Coordinator dashboard with its own role and no Admin account panel", async () => {
   emit("INITIAL_SESSION", 10);
   await vi.advanceTimersByTimeAsync(0);
-  await dashboard.setProps({ heading: "Academic Coordinator dashboard", role: "academic_coordinator" });
-  getStaffPortalRole.mockResolvedValue("academic_coordinator");
+  await dashboard.setProps({ heading: "Academic Coordinator dashboard", role: "academicCoordinator" });
+  getStaffPortalRole.mockResolvedValue("academicCoordinator");
   emit("INITIAL_SESSION", 10, "coordinator-id");
   await vi.advanceTimersByTimeAsync(0);
   expect(dashboard.get("h1").text()).toBe("Academic Coordinator dashboard");
