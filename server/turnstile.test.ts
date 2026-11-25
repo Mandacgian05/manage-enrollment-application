@@ -9,3 +9,8 @@ it('requires a valid token for this hostname and the enrollment action', async (
   fetchMock.mockResolvedValue({ ok: true, json: async () => ({ success: false }) });
   expect(await verifyTurnstile('secret', 'school.example', 'expired', '127.0.0.1')).toBe(false);
 });
+it("accepts Cloudflare's test answer (example.com, no action) only when no action is required", async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, hostname: 'example.com' }) }));
+  expect(await verifyTurnstile('test-secret', 'example.com', 'XXXX.DUMMY.TOKEN.XXXX', '127.0.0.1', null)).toBe(true);
+  expect(await verifyTurnstile('test-secret', 'example.com', 'XXXX.DUMMY.TOKEN.XXXX', '127.0.0.1')).toBe(false);
+});
