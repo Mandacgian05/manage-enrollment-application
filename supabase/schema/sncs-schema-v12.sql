@@ -557,20 +557,20 @@ begin
 end;
 $$;
 
--- Assign User Roles (Super Admin only). p_role is one of the six staff roles shown in Account
--- management: superAdmin, accountAdmin, contentAdmin (stored as role 'admin' + adminType),
--- registrar, teacher, academicCoordinator. A role is also chosen when an account is created.
+-- Assign User Roles (Super Admin only). p_role is one of the five roles offered in Account
+-- management: accountAdmin, contentAdmin (stored as role 'admin' + adminType), registrar,
+-- teacher, academicCoordinator. Super Admin access is never granted or removed from the
+-- website; it is set in the database only. A role is also chosen when an account is created.
 create function public.assign_staff_role(p_staff_id bigint, p_role text)
 returns void language plpgsql security definer set search_path = ''
 as $$
 declare
     actor_id bigint := public.lock_staff_change(auth.uid(), p_staff_id);
-    actor_type text;
     previous record;
     new_role text;
     new_type text;
 begin
-    if p_role is null or p_role not in ('superAdmin', 'accountAdmin', 'contentAdmin', 'registrar', 'teacher', 'academicCoordinator') then
+    if p_role is null or p_role not in ('accountAdmin', 'contentAdmin', 'registrar', 'teacher', 'academicCoordinator') then
         raise invalid_parameter_value using message = 'Unsupported staff role';
     end if;
     new_role := case when p_role in ('superAdmin', 'accountAdmin', 'contentAdmin') then 'admin' else p_role end;
@@ -579,9 +579,8 @@ begin
     if not found then
         raise no_data_found using message = 'Staff account no longer exists';
     end if;
-    select "adminType" into actor_type from public."users" where "userId" = actor_id;
-    if (new_type = 'superAdmin' or previous."adminType" = 'superAdmin') and actor_type is distinct from 'superAdmin' then
-        raise insufficient_privilege using message = 'Only a Super Admin can change Super Admin access';
+    if previous."adminType" = 'superAdmin' then
+        raise insufficient_privilege using message = 'Super Admin access is set in the database only';
     end if;
     if previous."role" = new_role and previous."adminType" is not distinct from new_type then
         return;
@@ -623,8 +622,8 @@ begin
         raise insufficient_privilege using message = 'Staff account management access required';
     end if;
     staff_role := provisioning ->> 'role';
-    if staff_role = 'superAdmin' and creator_type <> 'superAdmin' then
-        raise insufficient_privilege using message = 'Only a Super Admin can create a Super Admin';
+    if staff_role is null or staff_role not in ('accountAdmin', 'contentAdmin', 'registrar', 'teacher', 'academicCoordinator') then
+        raise invalid_parameter_value using message = 'Unsupported staff role (Super Admin is set in the database only)';
     end if;
 
     insert into public."users" ("email", "firstName", "middleName", "lastName", "suffix", "role", "adminType", "authUserId")

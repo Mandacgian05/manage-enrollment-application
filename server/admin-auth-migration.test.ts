@@ -103,7 +103,8 @@ describe("staff authorization (ERD v12 schema)", () => {
     });
     await expect(provision(contentAdminId, "new@example.com", newId)).rejects.toMatchObject({ code: "42501" });
     expect((await db.query("select id from auth.users where id = $1", [newId])).rows).toEqual([]);
-    await expect(provision(accountAdminId, "new@example.com", newId, "superAdmin")).rejects.toMatchObject({ code: "42501" });
+    await expect(provision(accountAdminId, "new@example.com", newId, "superAdmin")).rejects.toMatchObject({ code: "22023" });
+    await expect(provision(superAdminId, "new@example.com", newId, "superAdmin")).rejects.toMatchObject({ code: "22023" });
     await expect(provision(superAdminId, "registrar@example.com", newId)).rejects.toMatchObject({ code: "23505" });
     expect((await db.query("select id from auth.users where id = $1", [newId])).rows).toEqual([]);
     await provision(accountAdminId, "NEW@example.com", newId);
@@ -132,18 +133,21 @@ describe("staff authorization (ERD v12 schema)", () => {
       .toEqual([{ action: "role.change" }, { action: "role.change" }]);
   });
 
-  it("stores Admin kinds as role admin plus adminType, and only a Super Admin manages Super Admin access", async () => {
+  it("stores Admin kinds as role admin plus adminType, and never grants Super Admin from the website", async () => {
     const { rows: [account] } = await db.query<{ id: string }>(`select "userId"::text as id from public."users" where "authUserId" = $1`, [coordinatorId]);
     const stored = async () => (await db.query(`select "role", "adminType" from public."users" where "userId" = $1`, [account.id])).rows[0];
     await asUser(superAdminId, "select public.assign_staff_role($1, 'contentAdmin')", [account.id]);
     expect(await stored()).toEqual({ role: "admin", adminType: "contentAdmin" });
-    await expect(asUser(accountAdminId, "select public.assign_staff_role($1, 'superAdmin')", [account.id])).rejects.toMatchObject({ code: "42501" });
-    await asUser(superAdminId, "select public.assign_staff_role($1, 'superAdmin')", [account.id]);
-    expect(await stored()).toEqual({ role: "admin", adminType: "superAdmin" });
+    await expect(asUser(superAdminId, "select public.assign_staff_role($1, 'superAdmin')", [account.id])).rejects.toMatchObject({ code: "22023" });
     await expect(asUser(accountAdminId, "select public.assign_staff_role($1, 'registrar')", [account.id])).rejects.toMatchObject({ code: "42501" });
     await asUser(superAdminId, "select public.assign_staff_role($1, 'academicCoordinator')", [account.id]);
     expect(await stored()).toEqual({ role: "academicCoordinator", adminType: null });
     await expect(asUser(superAdminId, "select public.assign_staff_role($1, 'admin')", [account.id])).rejects.toMatchObject({ code: "22023" });
+    // A Super Admin's own access can't be changed from the website.
+    const { rows: [other] } = await db.query<{ id: string }>(`select "userId"::text as id from public."users" where "authUserId" = $1`, [inactiveId]);
+    await db.query(`update public."users" set "status" = 'active' where "userId" = $1`, [other.id]);
+    await expect(asUser(superAdminId, "select public.assign_staff_role($1, 'registrar')", [other.id])).rejects.toMatchObject({ code: "42501" });
+    await db.query(`update public."users" set "status" = 'inactive' where "userId" = $1`, [other.id]);
     await expect(db.query(`update public."users" set "adminType" = null where "authUserId" = $1`, [contentAdminId])).rejects.toMatchObject({ code: "23514" });
   });
 
