@@ -35,9 +35,11 @@ beforeEach(() => {
 // Staff Account Action Tests START
 const target = "00000000-0000-4000-8000-000000000002";
 it.each(["reset-password", "deactivate"])("checks target eligibility before executing %s", async (action) => {
-  client.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: target, error: null });
+  client.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: true, error: null })
+    .mockResolvedValueOnce({ data: target, error: null });
   const result = await submit({ action, staffId: "2" }).expect("Cache-Control", "no-store").expect(200);
-  expect(client.rpc).toHaveBeenNthCalledWith(2, "get_staff_auth_target", { p_actor_id: user.id, p_staff_id: "2" });
+  expect(client.rpc).toHaveBeenNthCalledWith(2, "is_super_admin", { p_user_id: user.id });
+  expect(client.rpc).toHaveBeenNthCalledWith(3, "get_staff_auth_target", { p_actor_id: user.id, p_staff_id: "2" });
   const update = client.auth.admin.updateUserById.mock.calls[0][1];
   expect(client.auth.admin.updateUserById).toHaveBeenCalledWith(target, {
     password: expect.stringMatching(/^[\w-]{32}aA1!$/),
@@ -52,9 +54,21 @@ it("rejects account actions for an unauthorized manager or unavailable target", 
   client.rpc.mockResolvedValueOnce({ data: false, error: null });
   await submit({ action: "reset-password", staffId: "2" }).expect(403);
   expect(client.rpc).toHaveBeenCalledTimes(1);
-  client.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: null, error: null });
+  client.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: true, error: null })
+    .mockResolvedValueOnce({ data: null, error: null });
   await submit({ action: "deactivate", staffId: "2" }).expect(403);
   expect(client.auth.admin.updateUserById).not.toHaveBeenCalled();
+});
+
+it("lets an Account Admin create accounts but not reset passwords or deactivate", async () => {
+  client.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: false, error: null });
+  const response = await submit({ action: "reset-password", staffId: "2" }).expect(403);
+  expect(response.body.message).toBe("Only a Super Admin can reset passwords or deactivate accounts.");
+  expect(client.rpc).not.toHaveBeenCalledWith("get_staff_auth_target", expect.anything());
+  expect(client.auth.admin.updateUserById).not.toHaveBeenCalled();
+  client.rpc.mockResolvedValue({ data: true, error: null });
+  await submit().expect(201);
+  expect(client.auth.admin.createUser).toHaveBeenCalledTimes(1);
 });
 
 it("completes a reset only after verifying the signed-in user's temporary password", async () => {

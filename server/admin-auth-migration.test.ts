@@ -70,9 +70,9 @@ describe("staff authorization (ERD v12 schema)", () => {
 
   it("tells each kind of Admin what they may open", async () => {
     const access = async (userId: string) => (await asUser<{ a: unknown }>(userId, "select public.get_admin_access() as a")).rows[0].a;
-    expect(await access(superAdminId)).toEqual({ adminType: "superAdmin", manageAccounts: true, manageContent: true });
-    expect(await access(accountAdminId)).toEqual({ adminType: "accountAdmin", manageAccounts: true, manageContent: false });
-    expect(await access(contentAdminId)).toEqual({ adminType: "contentAdmin", manageAccounts: false, manageContent: true });
+    expect(await access(superAdminId)).toEqual({ adminType: "superAdmin", manageAccounts: true, manageStaff: true, manageContent: true });
+    expect(await access(accountAdminId)).toEqual({ adminType: "accountAdmin", manageAccounts: true, manageStaff: false, manageContent: false });
+    expect(await access(contentAdminId)).toEqual({ adminType: "contentAdmin", manageAccounts: false, manageStaff: false, manageContent: true });
     expect(await access(registrarId)).toBeNull();
   });
 
@@ -114,18 +114,19 @@ describe("staff authorization (ERD v12 schema)", () => {
       .toEqual([{ action: "account.create", newValue: { role: "registrar", adminType: null } }]);
   });
 
-  it("lists and assigns roles only for Super Admins and Account Admins", async () => {
+  it("lists accounts for Super Admins and Account Admins, but only a Super Admin assigns roles", async () => {
     const { rows: [account] } = await db.query<{ id: string }>(`select "userId"::text as id from public."users" where "authUserId" = $1`, [teacherId]);
     for (const userId of [contentAdminId, registrarId, teacherId, coordinatorId]) {
       await expect(asUser(userId, "select * from public.list_staff_accounts()")).rejects.toMatchObject({ code: "42501" });
       await expect(asUser(userId, "select public.assign_staff_role($1, 'registrar')", [account.id])).rejects.toMatchObject({ code: "42501" });
     }
+    await expect(asUser(accountAdminId, "select public.assign_staff_role($1, 'registrar')", [account.id])).rejects.toMatchObject({ code: "42501" });
     const list = await asUser(accountAdminId, "select * from public.list_staff_accounts()");
     expect(list.rows).toContainEqual({ userId: account.id, firstName: "Test", middleName: null, lastName: "Teacher", suffix: null,
       email: "teacher@example.com", role: "teacher", adminType: null, status: "active" });
-    await asUser(accountAdminId, "select public.assign_staff_role($1, 'registrar')", [account.id]);
+    await asUser(superAdminId, "select public.assign_staff_role($1, 'registrar')", [account.id]);
     expect((await asUser(teacherId, "select public.get_staff_portal_role() as role")).rows).toEqual([{ role: "registrar" }]);
-    await asUser(accountAdminId, "select public.assign_staff_role($1, 'teacher')", [account.id]);
+    await asUser(superAdminId, "select public.assign_staff_role($1, 'teacher')", [account.id]);
     await expect(asUser(teacherId, "select * from public.search_registrar_applications()")).rejects.toMatchObject({ code: "42501" });
     expect((await db.query(`select "action" from public."auditLogs" where "entityId" = $1 and "entityType" = 'users' order by "auditLogId"`, [account.id])).rows)
       .toEqual([{ action: "role.change" }, { action: "role.change" }]);
@@ -134,7 +135,7 @@ describe("staff authorization (ERD v12 schema)", () => {
   it("stores Admin kinds as role admin plus adminType, and only a Super Admin manages Super Admin access", async () => {
     const { rows: [account] } = await db.query<{ id: string }>(`select "userId"::text as id from public."users" where "authUserId" = $1`, [coordinatorId]);
     const stored = async () => (await db.query(`select "role", "adminType" from public."users" where "userId" = $1`, [account.id])).rows[0];
-    await asUser(accountAdminId, "select public.assign_staff_role($1, 'contentAdmin')", [account.id]);
+    await asUser(superAdminId, "select public.assign_staff_role($1, 'contentAdmin')", [account.id]);
     expect(await stored()).toEqual({ role: "admin", adminType: "contentAdmin" });
     await expect(asUser(accountAdminId, "select public.assign_staff_role($1, 'superAdmin')", [account.id])).rejects.toMatchObject({ code: "42501" });
     await asUser(superAdminId, "select public.assign_staff_role($1, 'superAdmin')", [account.id]);
@@ -160,6 +161,7 @@ describe("staff authorization (ERD v12 schema)", () => {
     });
     const reset = { action: "reset-password", staff_id: account.id, actor_id: superAdminId, request_id: "reset-1" };
     await expect(authAction("rejected", { ...reset, actor_id: contentAdminId })).rejects.toMatchObject({ code: "42501" });
+    await expect(authAction("rejected", { ...reset, actor_id: accountAdminId })).rejects.toMatchObject({ code: "42501" });
     expect((await asUser(teacherId, role)).rows).toEqual([{ role: "teacher" }]);
     await authAction("temporary", reset);
     expect((await asUser(teacherId, role)).rows).toEqual([{ role: null }]);

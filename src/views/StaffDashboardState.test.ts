@@ -38,7 +38,7 @@ beforeEach(async () => {
   client.auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
   client.rpc.mockImplementation(async (name: string) => ({
     data: name === "get_staff_portal_role" ? currentRole
-      : name === "get_admin_access" ? { adminType: "superAdmin", manageAccounts: true, manageContent: true } : [account], error: null,
+      : name === "get_admin_access" ? { adminType: "superAdmin", manageAccounts: true, manageStaff: true, manageContent: true } : [account], error: null,
   }));
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
     ok: true, json: async () => ({ temporaryPassword: "new-temporary-password" }),

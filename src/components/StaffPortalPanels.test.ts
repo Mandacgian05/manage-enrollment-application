@@ -152,3 +152,18 @@ it("shows 25+ when a status has more than one page of applications", async () =>
     wrapper.unmount();
   }
 });
+
+it("shows an Account Admin the staff list without role, reset or deactivate actions", async () => {
+  const account = staffRow({ userId: "3", firstName: "Teacher", lastName: "Example", email: "teacher@example.com", role: "teacher" });
+  client.rpc.mockResolvedValue({ data: [account], error: null });
+  const wrapper = mount(StaffAccountsPanel, { props: { canChangeAccounts: false } });
+  try {
+    await flushPromises();
+    expect(wrapper.get("tbody").text()).toContain("Teacher Example");
+    expect(wrapper.find("tbody button").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Only a Super Admin can change roles, reset passwords or deactivate accounts.");
+    expect(wrapper.find("form").exists()).toBe(true);
+  } finally {
+    wrapper.unmount();
+  }
+});

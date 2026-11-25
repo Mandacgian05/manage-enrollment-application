@@ -86,6 +86,13 @@ export function createStaffAccountsApi(env = process.env, makeClient = createCli
     }
 
     if (action === "reset-password" || action === "deactivate") {
+      // Account Admins only create accounts; resets and deactivation are for Super Admins.
+      const { data: superAdmin, error: superError } = await client.rpc("is_super_admin", { p_user_id: user.id });
+      if (superError) throw superError;
+      if (superAdmin !== true) {
+        res.status(403).json({ message: "Only a Super Admin can reset passwords or deactivate accounts." });
+        return;
+      }
       if (typeof staffId !== "string" || !/^[1-9][0-9]{0,18}$/.test(staffId) || BigInt(staffId) > 9223372036854775807n) {
         res.status(422).json({ message: "Choose a valid staff account." });
         return;
