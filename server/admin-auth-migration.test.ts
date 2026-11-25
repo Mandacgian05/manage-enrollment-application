@@ -70,9 +70,9 @@ describe("staff authorization (ERD v12 schema)", () => {
 
   it("tells each kind of Admin what they may open", async () => {
     const access = async (userId: string) => (await asUser<{ a: unknown }>(userId, "select public.get_admin_access() as a")).rows[0].a;
-    expect(await access(superAdminId)).toEqual({ adminType: "superAdmin", manageAccounts: true, manageStaff: true, manageContent: true });
-    expect(await access(accountAdminId)).toEqual({ adminType: "accountAdmin", manageAccounts: true, manageStaff: false, manageContent: false });
-    expect(await access(contentAdminId)).toEqual({ adminType: "contentAdmin", manageAccounts: false, manageStaff: false, manageContent: true });
+    expect(await access(superAdminId)).toEqual({ adminType: "superAdmin", manageAccounts: true, manageStaff: true, manageContent: true, temporaryAccess: [] });
+    expect(await access(accountAdminId)).toEqual({ adminType: "accountAdmin", manageAccounts: true, manageStaff: false, manageContent: false, temporaryAccess: [] });
+    expect(await access(contentAdminId)).toEqual({ adminType: "contentAdmin", manageAccounts: false, manageStaff: false, manageContent: true, temporaryAccess: [] });
     expect(await access(registrarId)).toBeNull();
   });
 
