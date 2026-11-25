@@ -117,7 +117,7 @@ it("drops the previous Teacher's schedule figures when another Teacher signs in 
   await vi.advanceTimersByTimeAsync(0);
   await flushPromises();
   dashboard.findComponent(TeacherSchedulePanel).vm.$emit("loaded", { entries: [
-    { day_of_week: 1, start_time: "08:00", end_time: "09:00", subject: "Math", section: "7-A", room: "101" },
+    { dayOfWeek: 1, startTime: "08:00", endTime: "09:00", subject: "Math", section: "7-A", gradeLevel: "Grade 7", strands: null, room: "101", isFixed: false },
   ] });
   await nextTick();
   expect(statValues()[0]).toBe("1");
