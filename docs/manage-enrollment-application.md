@@ -66,11 +66,16 @@ new wording.
    (it emailed on every update and pointed at a mistyped project URL), creates
    `application_requirement_checks` and the Registrar functions.
 2. **Edge function.** Deploy `send-application-status-email` together with
-   `supabase/functions/_shared/requirements.ts`
+   `supabase/functions/_shared/requirements.ts` and `supabase/functions/_shared/email.ts`
    (`supabase functions deploy send-application-status-email`).
-3. **Function secrets.** `RESEND_API_KEY` (already set). Optional: `EMAIL_FROM` (a sender
-   on a domain verified in Resend; the default `onboarding@resend.dev` can only deliver to
-   the Resend account owner's address) and `APP_ORIGIN` (the site origin, to restrict CORS).
+3. **Function secrets.** Choose one email provider:
+   - **Brevo (any recipient, no domain needed):** `BREVO_API_KEY` and `EMAIL_FROM`, for example
+     `Sto. Niño Catholic School <registrar.sncs@gmail.com>`. The sender address must be
+     confirmed under Senders in Brevo. Used first when both are set.
+   - **Resend:** `RESEND_API_KEY`, and optionally `EMAIL_FROM` on a domain verified in Resend.
+     The default `onboarding@resend.dev` can only deliver to the Resend account owner's address.
+
+   Optional: `APP_ORIGIN` (the site origin, to restrict CORS).
 
 ## Undo
 
