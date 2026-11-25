@@ -2,7 +2,8 @@ import type { Request } from 'express';
 import ipaddr from 'ipaddr.js';
 import { createApp } from './app.js';
 import { supabaseStore } from './supabase.js';
-import { TEST_HOSTNAME, TEST_SECRET_KEY, TEST_SITE_KEY, verifyTurnstile } from './turnstile.js';
+import { verifyTurnstile } from './turnstile.js';
+import { TEST_HOSTNAME, TEST_SECRET_KEY, TEST_SITE_KEY } from './turnstile-test-keys.js';
 
 export class ConfigurationError extends Error {}
 
