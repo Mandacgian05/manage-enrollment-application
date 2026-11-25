@@ -118,7 +118,7 @@ it("creates a confirmed Auth account with the assigned staff role and verified c
   });
 });
 
-it.each(["academicCoordinator", "superAdmin", "accountAdmin", "contentAdmin", "teacher"])("allows an authorized manager to provision the %s role", async (role) => {
+it.each(["academicCoordinator", "accountAdmin", "contentAdmin", "teacher"])("allows an authorized manager to provision the %s role", async (role) => {
   await submit({ ...input, role }).expect(201);
   expect(client.auth.admin.createUser).toHaveBeenCalledWith(expect.objectContaining({
     app_metadata: { chimera_staff_provisioning: { createdBy: user.id, ...names, role } },
@@ -134,6 +134,7 @@ it("requires a first and last name", async () => {
 it("rejects unsupported roles and handles a duplicate email without exposing provider details", async () => {
   await submit({ ...input, role: "owner" }).expect(422);
   await submit({ ...input, role: "admin" }).expect(422);
+  await submit({ ...input, role: "superAdmin" }).expect(422);
   expect(client.auth.admin.createUser).not.toHaveBeenCalled();
   client.auth.admin.createUser.mockResolvedValue({ error: { code: "email_exists", message: "private details" } });
   const response = await submit().expect(409);

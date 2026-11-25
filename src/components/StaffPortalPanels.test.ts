@@ -167,3 +167,18 @@ it("shows an Account Admin the staff list without role, reset or deactivate acti
     wrapper.unmount();
   }
 });
+
+it("never offers Super Admin as a role and can't change a Super Admin's role", async () => {
+  const superAdmin = staffRow({ userId: "4", firstName: "Test", lastName: "Super", email: "super@example.com", role: "admin", adminType: "superAdmin" });
+  client.rpc.mockResolvedValue({ data: [superAdmin], error: null });
+  const wrapper = mount(StaffAccountsPanel);
+  try {
+    await flushPromises();
+    const options = wrapper.findAll("form select option").map((option) => option.text());
+    expect(options).toEqual(["Account Admin", "Content Admin", "Registrar", "Academic Coordinator", "Teacher"]);
+    expect(wrapper.get("tbody").text()).toContain("Super Admin");
+    expect(wrapper.findAll("tbody button").map((button) => button.text())).not.toContain("Change role");
+  } finally {
+    wrapper.unmount();
+  }
+});

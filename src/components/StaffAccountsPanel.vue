@@ -11,7 +11,7 @@ import { onMounted, ref } from "vue";
 import { getStaffSupabaseClient } from "@/lib/supabase";
 import type { StaffRole } from "@/lib/staff-auth";
 
-/** The six staff roles shown in Account management. Admin kinds are stored as role "admin" + adminType. */
+/** Staff roles in Account management. Admin kinds are stored as role "admin" + adminType. */
 type AccountRole = "superAdmin" | "accountAdmin" | "contentAdmin" | Exclude<StaffRole, "admin">;
 type AdminType = "superAdmin" | "accountAdmin" | "contentAdmin";
 type StaffAccount = {
@@ -28,6 +28,8 @@ const roles: Record<AccountRole, string> = {
   superAdmin: "Super Admin", accountAdmin: "Account Admin", contentAdmin: "Content Admin",
   registrar: "Registrar", academicCoordinator: "Academic Coordinator", teacher: "Teacher",
 };
+// Roles that can be given from the website. Super Admin is set in the database only.
+const assignableRoles = Object.fromEntries(Object.entries(roles).filter(([role]) => role !== "superAdmin")) as Record<Exclude<AccountRole, "superAdmin">, string>;
 const accountRole = (account: StaffAccount): AccountRole => account.adminType ?? (account.role as Exclude<StaffRole, "admin">);
 const displayName = (account: StaffAccount) => [account.firstName, account.middleName, account.lastName, account.suffix].filter(Boolean).join(" ");
 const client = getStaffSupabaseClient();
@@ -200,7 +202,7 @@ onMounted(() => void loadAccounts());
         <label>Initial password <input v-model="password" type="password" autocomplete="new-password" required minlength="12" maxlength="72" /></label>
         <label>Role
           <select v-model="newRole">
-            <option v-for="(label, role) in roles" :key="role" :value="role">{{ label }}</option>
+            <option v-for="(label, role) in assignableRoles" :key="role" :value="role">{{ label }}</option>
           </select>
         </label>
         <button class="account-primary" type="submit" :disabled="saving">Create account</button>
@@ -227,7 +229,7 @@ onMounted(() => void loadAccounts());
               <td>{{ account.email }}</td>
               <td>
                 <select v-if="editingId === account.userId" v-model="selectedRole" :aria-label="`Role for ${displayName(account)}`">
-                  <option v-for="(label, role) in roles" :key="role" :value="role">{{ label }}</option>
+                  <option v-for="(label, role) in assignableRoles" :key="role" :value="role">{{ label }}</option>
                 </select>
                 <template v-else>{{ roles[accountRole(account)] }}</template>
               </td>
@@ -243,7 +245,7 @@ onMounted(() => void loadAccounts());
                   <button type="button" :disabled="saving" @click="confirmation = undefined">Cancel</button>
                 </template>
                 <template v-else>
-                  <button type="button" :disabled="saving" @click="editingId = account.userId; selectedRole = accountRole(account); confirmation = undefined">Change role</button>
+                  <button v-if="account.adminType !== 'superAdmin'" type="button" :disabled="saving" @click="editingId = account.userId; selectedRole = accountRole(account); confirmation = undefined">Change role</button>
                   <template v-if="account.status === 'active'">
                     <button type="button" :disabled="saving" @click="confirmation = { account, action: 'reset-password' }; editingId = undefined">Reset password</button>
                     <button type="button" :disabled="saving" @click="confirmation = { account, action: 'deactivate' }; editingId = undefined">Deactivate</button>

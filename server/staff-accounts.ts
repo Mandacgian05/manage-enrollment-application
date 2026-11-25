@@ -8,8 +8,9 @@ import express from "express";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
-// The six staff roles in Account management; admin kinds become role "admin" + adminType in the database.
-const staffRoles = ["superAdmin", "accountAdmin", "contentAdmin", "registrar", "teacher", "academicCoordinator"];
+// Roles that can be given when creating an account; admin kinds become role "admin" + adminType
+// in the database. Super Admin is never created from the website (set in the database only).
+const staffRoles = ["accountAdmin", "contentAdmin", "registrar", "teacher", "academicCoordinator"];
 
 export function createStaffAccountsApi(env = process.env, makeClient = createClient) {
   const app = express();
