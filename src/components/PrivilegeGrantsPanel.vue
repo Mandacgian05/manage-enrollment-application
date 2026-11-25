@@ -36,9 +36,16 @@ const manilaDay = (offsetDays = 0) => new Intl.DateTimeFormat("en-CA", { timeZon
   .format(new Date(Date.now() + offsetDays * 864e5));
 const today = manilaDay();
 const lastDay = manilaDay(365);
-const formatWhen = (value: string) => new Intl.DateTimeFormat("en-PH", {
+const whenFormat = new Intl.DateTimeFormat("en-PH", {
   timeZone: "Asia/Manila", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
-}).format(new Date(value));
+});
+const formatWhen = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : whenFormat.format(date);
+};
+const isGrant = (row: unknown): row is Grant => Boolean(row) && typeof row === "object"
+  && typeof (row as Grant).grantId === "string" && (row as Grant).privilege in privileges
+  && typeof (row as Grant).expiresAt === "string" && typeof (row as Grant).active === "boolean";
 const adminName = (account: AdminAccount) => `${account.firstName} ${account.lastName}`;
 const selected = computed(() => admins.value.find((account) => account.userId === userId.value));
 const options = computed(() => (selected.value?.adminType && lendable[selected.value.adminType]) || []);
@@ -50,8 +57,9 @@ async function load() {
   try {
     const [accounts, list] = await Promise.all([client.rpc("list_staff_accounts", { p_offset: 0 }), client.rpc("list_privilege_grants")]);
     if (accounts.error || list.error) throw new Error();
-    admins.value = (accounts.data as AdminAccount[]).filter((account) => account.status === "active" && account.adminType && account.adminType in lendable);
-    grants.value = list.data as Grant[];
+    admins.value = (Array.isArray(accounts.data) ? accounts.data as AdminAccount[] : [])
+      .filter((account) => account?.status === "active" && Boolean(account.adminType) && account.adminType! in lendable);
+    grants.value = Array.isArray(list.data) ? list.data.filter(isGrant) : [];
   } catch {
     listError.value = "Temporary access could not be loaded. Please try again.";
   } finally {
