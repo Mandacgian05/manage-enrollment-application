@@ -38,7 +38,7 @@ const schedulerToken = ref("");
 const roleLabels: Record<StaffRole, string> = { admin: "Admin", registrar: "Registrar", teacher: "Teacher", academicCoordinator: "Academic Coordinator" };
 // Three kinds of Admin share the admin role: Super Admin (everything), Account Admin (staff
 // accounts and roles) and Content Admin (website content). The database reports which one.
-type AdminAccess = { adminType: "superAdmin" | "accountAdmin" | "contentAdmin"; manageAccounts: boolean; manageContent: boolean };
+type AdminAccess = { adminType: "superAdmin" | "accountAdmin" | "contentAdmin"; manageAccounts: boolean; manageStaff?: boolean; manageContent: boolean };
 const adminLabels: Record<AdminAccess["adminType"], string> = { superAdmin: "Super Admin", accountAdmin: "Account Admin", contentAdmin: "Content Admin" };
 const adminAccess = ref<AdminAccess>();
 // The accounts panel also reports account access (undefined until it has checked).
@@ -217,7 +217,7 @@ const intro = computed(() => {
   switch (props.role) {
     case "admin":
       if (adminAccess.value?.adminType === "contentAdmin") return "Manage the announcements, events, pages and PDFs on the school website.";
-      if (adminAccess.value?.adminType === "accountAdmin") return "Create staff accounts, assign roles, reset passwords and deactivate access.";
+      if (adminAccess.value?.adminType === "accountAdmin") return "Create staff accounts and choose each new staff member’s role.";
       return "Create staff accounts, assign roles, reset passwords and deactivate access, and keep the school website up to date.";
     case "registrar": return "Review enrollment applications, tick the requirements families present onsite, and update each status.";
     case "teacher": return "Your published weekly class schedule will appear here once the Academic Coordinator publishes it.";
@@ -376,7 +376,7 @@ watch(() => props.role, () => {
           <RouterLink class="portal-content-open" :to="{ name: 'content-workspace' }">Open content workspace</RouterLink>
         </section>
         <div v-if="role === 'admin'" v-show="canManageAccounts !== false" class="portal-section">
-          <StaffAccountsPanel @access="canManageAccounts = $event" />
+          <StaffAccountsPanel :can-change-accounts="adminAccess?.manageStaff === true" @access="canManageAccounts = $event" />
         </div>
         <div v-if="role === 'registrar'" class="portal-section">
           <RegistrarApplicationsPanel :staff-name="staffName" />

@@ -21,6 +21,8 @@ type StaffAccount = {
 
 // Tells the dashboard whether this Admin can manage staff accounts (Super Admin or Account Admin).
 const emit = defineEmits<{ access: [canManageAccounts: boolean] }>();
+// Super Admins also change roles, reset passwords and deactivate; Account Admins only create accounts.
+const props = withDefaults(defineProps<{ canChangeAccounts?: boolean }>(), { canChangeAccounts: true });
 
 const roles: Record<AccountRole, string> = {
   superAdmin: "Super Admin", accountAdmin: "Account Admin", contentAdmin: "Content Admin",
@@ -213,11 +215,12 @@ onMounted(() => void loadAccounts());
       </div>
       <div class="account-card account-list-card">
       <h3 class="account-list-title">Staff list</h3>
-      <p class="account-hint">Change roles, reset passwords or deactivate accounts.</p>
+      <p v-if="props.canChangeAccounts" class="account-hint">Change roles, reset passwords or deactivate accounts.</p>
+      <p v-else class="account-hint">Only a Super Admin can change roles, reset passwords or deactivate accounts.</p>
       <p v-if="!accounts.length">No staff accounts found.</p>
       <div v-else class="account-table">
         <table aria-label="Staff account list">
-          <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+          <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Status</th><th v-if="props.canChangeAccounts" scope="col">Action</th></tr></thead>
           <tbody>
             <tr v-for="account in accounts" :key="account.userId">
               <th scope="row">{{ displayName(account) }}</th>
@@ -229,7 +232,7 @@ onMounted(() => void loadAccounts());
                 <template v-else>{{ roles[accountRole(account)] }}</template>
               </td>
               <td><span class="account-status" :data-status="account.status">{{ account.status }}</span></td>
-              <td class="account-actions">
+              <td v-if="props.canChangeAccounts" class="account-actions">
                 <template v-if="editingId === account.userId">
                   <button type="button" :disabled="saving || selectedRole === accountRole(account)" @click="assignRole(account)">Save role</button>
                   <button type="button" :disabled="saving" @click="editingId = undefined">Cancel</button>

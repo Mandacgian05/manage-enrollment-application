@@ -12,7 +12,7 @@
 --   5. A fully defined teachers table.
 -- Plus the ERD gap fixes: website content summary/images/trash, resource trash,
 -- scheduleRuns.publishedBy, and three kinds of Admin in users.adminType:
---   superAdmin (everything), accountAdmin (staff accounts and roles), contentAdmin (website content).
+--   superAdmin (everything), accountAdmin (creates staff accounts), contentAdmin (website content).
 -- Function names keep their existing snake_case names so the website's calls are stable;
 -- the data they return uses camelCase keys. Stored code values (statuses such as 'for_review',
 -- departments such as 'grade_school') keep their existing lowercase codes; the Academic
@@ -464,12 +464,27 @@ as $$
     );
 $$;
 
+-- Changing roles, resetting passwords and deactivating accounts: Super Admins only.
+-- With no signed-in user (server key) it checks the given account only.
+create function public.is_super_admin(p_user_id uuid)
+returns boolean language sql stable security definer set search_path = ''
+as $$
+    select (auth.uid() is null or (auth.uid() = p_user_id and public.has_live_staff_session())) and exists (
+        select 1 from public."users"
+        where "authUserId" = p_user_id and "role" = 'admin' and "status" = 'active'
+          and "adminType" = 'superAdmin' and not "mustChangePassword"
+    );
+$$;
+
 -- What the signed-in Admin may open, for the dashboard's side panel.
+-- manageAccounts: see the staff list and create accounts (Super Admin, Account Admin).
+-- manageStaff: change roles, reset passwords, deactivate (Super Admin only).
 create function public.get_admin_access()
 returns jsonb language sql stable security definer set search_path = ''
 as $$
     select jsonb_build_object('adminType', u."adminType",
         'manageAccounts', u."adminType" in ('superAdmin', 'accountAdmin'),
+        'manageStaff', u."adminType" = 'superAdmin',
         'manageContent', u."adminType" in ('superAdmin', 'contentAdmin'))
     from public."users" u
     where u."authUserId" = auth.uid() and public.has_active_admin_access();
@@ -521,7 +536,8 @@ begin
 end;
 $$;
 
--- Lock actor and target in a consistent order through the account change.
+-- Lock actor and target in a consistent order through a role change, password reset or
+-- deactivation. Only a Super Admin may make these changes; Account Admins only create accounts.
 create function public.lock_staff_change(p_actor_id uuid, p_staff_id bigint)
 returns bigint language plpgsql security definer set search_path = ''
 as $$
@@ -530,8 +546,8 @@ declare
 begin
     perform 1 from public."users" where "authUserId" = p_actor_id or "userId" = p_staff_id
     order by "userId" for update;
-    if not public.can_manage_staff_accounts(p_actor_id) then
-        raise insufficient_privilege using message = 'Staff account management access required';
+    if not public.is_super_admin(p_actor_id) then
+        raise insufficient_privilege using message = 'Only a Super Admin can change roles, reset passwords or deactivate accounts';
     end if;
     select "userId" into actor_id from public."users" where "authUserId" = p_actor_id;
     if actor_id = p_staff_id then
@@ -541,9 +557,9 @@ begin
 end;
 $$;
 
--- Assign User Roles. p_role is one of the six staff roles shown in Account management:
--- superAdmin, accountAdmin, contentAdmin (stored as role 'admin' + adminType), registrar,
--- teacher, academicCoordinator. Only a Super Admin can grant or remove Super Admin.
+-- Assign User Roles (Super Admin only). p_role is one of the six staff roles shown in Account
+-- management: superAdmin, accountAdmin, contentAdmin (stored as role 'admin' + adminType),
+-- registrar, teacher, academicCoordinator. A role is also chosen when an account is created.
 create function public.assign_staff_role(p_staff_id bigint, p_role text)
 returns void language plpgsql security definer set search_path = ''
 as $$
@@ -645,7 +661,7 @@ returns uuid language sql stable security definer set search_path = ''
 as $$
     select "authUserId" from public."users"
     where "userId" = p_staff_id and "status" = 'active'
-      and "authUserId" <> p_actor_id and public.can_manage_staff_accounts(p_actor_id);
+      and "authUserId" <> p_actor_id and public.is_super_admin(p_actor_id);
 $$;
 
 create function public.sync_staff_auth_action()
@@ -1172,7 +1188,8 @@ grant execute on function
     public.cms_list_resources(), public.cms_save_resource(bigint, text, text, text, integer, text),
     public.cms_set_status(text, bigint, text), public.cms_trash(text, bigint, boolean), public.cms_delete(text, bigint)
     to authenticated;
-grant execute on function public.can_manage_staff_accounts(uuid), public.get_staff_auth_target(uuid, bigint) to service_role;
+grant execute on function public.can_manage_staff_accounts(uuid), public.is_super_admin(uuid),
+    public.get_staff_auth_target(uuid, bigint) to service_role;
 -- Function permissions END
 
 -- ============================================================================
