@@ -23,7 +23,7 @@ vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => ({
   auth: { onAuthStateChange, signOut: vi.fn() },
   rpc: async () => ({ data: adminAccess.value, error: null }),
 }) }));
-vi.mock("vue-router", () => ({ RouterLink: { props: ["to"], template: "<a><slot /></a>" }, useRouter: () => ({ replace: vi.fn() }) }));
+vi.mock("vue-router", () => ({ RouterLink: { props: ["to"], template: "<a><slot /></a>" }, useRoute: () => ({ hash: "" }), useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/lib/cms/config", () => ({ cmsPreviewEnabled: true, cmsDatabaseEnabled: false }));
 vi.mock("@/components/RegistrarApplicationsPanel.vue", () => ({ default: { template: "<div>applications</div>" } }));
 // The workbench reports its open step and progress; the side panel asks it to open steps.
@@ -81,9 +81,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("gives a Super Admin account management and every website section", async () => {
+it("gives a Super Admin a short side panel: staff accounts and website content", async () => {
   await open("admin", "Admin dashboard");
-  expect(navLabels()).toEqual(["Overview", "Staff accounts", "Create account", "All content", "Announcements", "Events", "Pages", "PDF resources"]);
+  expect(navLabels()).toEqual(["Overview", "Staff accounts", "Website content"]);
+  expect(dashboard!.get(".portal-hero").text()).toContain("Create account");
   expect(dashboard!.get(".portal-user-role").text()).toBe("Super Admin");
   expect(dashboard!.get('[data-testid="staff-list"]').isVisible()).toBe(true);
 });
@@ -91,24 +92,25 @@ it("gives a Super Admin account management and every website section", async () 
 it("gives an Account Admin account management only", async () => {
   adminAccess.value = { adminType: "accountAdmin", manageAccounts: true, manageContent: false };
   await open("admin", "Admin dashboard");
-  expect(navLabels()).toEqual(["Overview", "Staff accounts", "Create account"]);
+  expect(navLabels()).toEqual(["Overview", "Staff accounts"]);
   expect(dashboard!.get(".portal-user-role").text()).toBe("Account Admin");
   expect(dashboard!.text()).not.toContain("Open content workspace");
 });
 
-it("gives a Content Admin the website sections only and hides the staff list", async () => {
+it("gives a Content Admin website content only, with content summary cards, and hides the staff list", async () => {
   accountAccess.value = false;
   adminAccess.value = { adminType: "contentAdmin", manageAccounts: false, manageContent: true };
   await open("admin", "Admin dashboard");
-  expect(navLabels()).toEqual(["Overview", "All content", "Announcements", "Events", "Pages", "PDF resources"]);
+  expect(navLabels()).toEqual(["Overview", "Website content"]);
+  expect(dashboard!.findAll(".portal-stat .portal-stat-label").map((label) => label.text())).toEqual(["Total content", "Published", "Drafts", "Archived"]);
   expect(dashboard!.get(".portal-user-role").text()).toBe("Content Admin");
   expect(dashboard!.get('[data-testid="staff-list"]').isVisible()).toBe(false);
   expect(dashboard!.text()).toContain("Open content workspace");
 });
 
 it.each([
-  ["registrar", ["Overview", "Applications", "Enrollment form"]],
-  ["academicCoordinator", ["Overview", "Teacher loads", "School times", "Check & generate", "Review & publish", "Published timetable"]],
+  ["registrar", ["Overview", "Applications"]],
+  ["academicCoordinator", ["Overview", "Scheduling workbench", "Published timetable"]],
   ["teacher", ["Overview", "My schedule"]],
 ] as const)("shows %s only its own sections", async (role, labels) => {
   await open(role);
@@ -135,8 +137,8 @@ it("shrinks the side panel to icons, keeps every item reachable, and remembers t
   expect(toggle.attributes("aria-label")).toBe("Expand side panel");
   // Icons stay, and each item keeps its name for screen readers and the hover label.
   const items = dashboard!.findAll(".portal-nav .portal-nav-item");
-  expect(items.map((item) => item.find("svg").exists())).toEqual([true, true, true]);
-  expect(items.map((item) => item.attributes("data-label"))).toEqual(["Overview", "Applications", "Enrollment form"]);
+  expect(items.map((item) => item.find("svg").exists())).toEqual([true, true]);
+  expect(items.map((item) => item.attributes("data-label"))).toEqual(["Overview", "Applications"]);
   expect(localStorage.getItem("sncs-staff-sidebar")).toBe("collapsed");
 
   dashboard!.unmount();
@@ -144,18 +146,17 @@ it("shrinks the side panel to icons, keeps every item reachable, and remembers t
   expect(dashboard!.get(".portal").classes()).toContain("portal-collapsed");
 });
 
-it("follows the scheduling workbench: step progress, the open step, and opening steps from the side panel", async () => {
+it("opens the scheduling workbench at its current step, and the published timetable, from the side panel", async () => {
   await open("academicCoordinator", "Academic Coordinator dashboard");
-  const dots = dashboard!.findAll(".portal-step-dot").map((dot) => [dot.attributes("data-state"), dot.text()]);
-  expect(dots).toEqual([["done", "✓"], ["done", "✓"], ["now", "3"], ["todo", "4"]]);
-  expect(dashboard!.get(".portal-nav-active").text()).toContain("Check & generate");
-  expect(dashboard!.get(".portal-breadcrumb strong").text()).toBe("Check & generate");
+  expect(dashboard!.find(".portal-step-dot").exists()).toBe(false);
+  expect(dashboard!.get(".portal-nav-active").text()).toContain("Scheduling workbench");
+  expect(dashboard!.get(".portal-breadcrumb strong").text()).toBe("Scheduling workbench");
   expect(dashboard!.find(".portal-hero").exists()).toBe(false);
   expect(dashboard!.get("h1").text()).toBe("Academic Coordinator dashboard");
 
   const items = dashboard!.findAll(".portal-nav button");
-  await items.find((item) => item.text().includes("School times"))!.trigger("click");
-  expect(showView).toHaveBeenLastCalledWith("school-times");
+  await items.find((item) => item.text().includes("Scheduling workbench"))!.trigger("click");
+  expect(showView).toHaveBeenLastCalledWith("checks");
   await items.find((item) => item.text().includes("Published timetable"))!.trigger("click");
   expect(showView).toHaveBeenLastCalledWith("teacher");
   expect(dashboard!.get(".portal-nav-active").text()).toContain("Published timetable");
