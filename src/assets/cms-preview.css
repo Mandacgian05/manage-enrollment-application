@@ -89,6 +89,10 @@
 .cms-breadcrumb strong { color: var(--cms-ink); }
 .cms-prototype { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 5px 9px; border: 1px solid #e8d7bb; border-radius: 20px; background: #fff8e8; color: #654b23; font-weight: 700; font-size: .72rem; }
 .cms-prototype i, .cms-school-label span { width: 7px; height: 7px; flex: none; background: #a86e16; border-radius: 50%; }
+.cms-prototype[data-live] { border-color: #bfdcc8; background: #e7f4eb; color: #28654e; }
+.cms-prototype[data-live] i { background: #2f8a5f; }
+.cms-loading { display: grid; justify-items: start; gap: 12px; padding: 24px; color: #665b60; }
+.cms-loading p { margin: 0; }
 .cms-main { width: min(100%, 1440px); margin: 0 auto; padding: 26px clamp(20px, 3vw, 42px) 42px; }
 .cms-hero {
   position: relative;

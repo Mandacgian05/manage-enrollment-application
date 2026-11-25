@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase", () => ({ getStaffSupabaseClient: () => ({
   rpc: async () => ({ data: adminAccess.value, error: null }),
 }) }));
 vi.mock("vue-router", () => ({ RouterLink: { props: ["to"], template: "<a><slot /></a>" }, useRouter: () => ({ replace: vi.fn() }) }));
-vi.mock("@/lib/cms/config", () => ({ cmsPreviewEnabled: true }));
+vi.mock("@/lib/cms/config", () => ({ cmsPreviewEnabled: true, cmsDatabaseEnabled: false }));
 vi.mock("@/components/RegistrarApplicationsPanel.vue", () => ({ default: { template: "<div>applications</div>" } }));
 // The workbench reports its open step and progress; the side panel asks it to open steps.
 vi.mock("@/components/TeacherSchedulePanel.vue", () => ({ default: { template: '<section><h2 id="teacher-schedule-heading">My class schedule</h2></section>' } }));

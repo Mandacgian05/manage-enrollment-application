@@ -52,6 +52,29 @@ insert into public."enrollmentPeriods" ("schoolYearStart", "schoolYearEnd", "ope
 select 2026, 2027, "userId", now() from public."users" where "email" = 'superadmin1@gmail.com'
 on conflict do nothing;
 
+-- Copies the announcements and events the website shows today into "cmsContent" as published
+-- items, so the content workspace can edit them. Skips any slug already present.
+insert into public."cmsContent" ("contentType", "title", "slug", "summary", "body", "eventStartsAt", "status",
+                                 "publishedAt", "createdBy", "updatedBy")
+select v.kind, v.title, v.slug, v.summary, v.body, v.starts::timestamptz, 'published', null, s."userId", s."userId"
+from (values
+    ('announcement', 'School office transactions', 'office-transactions',
+     'School office transactions are available Monday to Friday, from 8:00 AM to 5:00 PM.',
+     E'The school welcomes office transactions from Monday to Friday, 8:00 AM to 5:00 PM.\n\nFor admissions and school records, contact the Registrar. For payment questions, contact the Finance Office.', null),
+    ('announcement', 'GENYO learning platform for SY 2026–2027', 'genyo-learning-platform-2026-2027',
+     'SNCS announces a GENYO 5G Systems learning-platform upgrade for the school community.',
+     E'For school year 2026–2027, SNCS has announced an upgrade to the GENYO 5G Systems Learning Platform to support online distance learning.\n\nContact the school for information about learning-platform access and enrollment.', null),
+    ('event', 'Wellness break: intermediate to high school', 'wellness-break', '', 'Published in the school’s September 2026 activity notices.', '2026-09-10 00:00:00+08'),
+    ('event', 'Employees wellness break', 'employees-wellness-break', '', 'Published in the school’s September 2026 activity notices.', '2026-09-14 00:00:00+08'),
+    ('event', 'Launching of CL, Science, and Math Week', 'cl-science-math-launch', '', 'Published in the school’s September 2026 activity notices.', '2026-09-21 00:00:00+08'),
+    ('event', 'BSP and GSP investiture', 'bsp-gsp-investiture', '', 'Published in the school’s September 2026 activity notices.', '2026-09-25 00:00:00+08'),
+    ('event', 'First Term Card Day and Parents’ Faith Formation', 'first-term-card-day', '', 'Published in the school’s September 2026 activity notices.', '2026-09-26 00:00:00+08'),
+    ('event', 'Kainang Pamilya Mahalaga Day', 'kainang-pamilya', '', 'Published in the school’s September 2026 activity notices.', '2026-09-28 00:00:00+08'),
+    ('event', 'Culminating of CL, Science, and Math Week', 'cl-science-math-culminating', '', 'Published in the school’s September 2026 activity notices.', '2026-09-28 00:00:00+08')
+) as v(kind, title, slug, summary, body, starts)
+cross join lateral (select "userId" from public."users" where "adminType" = 'superAdmin' order by "userId" limit 1) s
+where not exists (select 1 from public."cmsContent" c where c."slug" = v.slug);
+
 commit;
 
 select "email", "firstName", "role", "adminType", "authUserId" is not null as "linked" from public."users" order by "userId";

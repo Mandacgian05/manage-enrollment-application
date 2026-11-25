@@ -9,6 +9,8 @@
   Modified Date: 20261120
   Modified by: Gian Mandac (role-based side panel that can shrink to icons, content workspace look; PB-07 teacher schedule panel)
   Modified Date: 20261124
+  Modified by: Gian Mandac (content workspace saves to the database; Super Admin temporary access, PB-05)
+  Modified Date: 20261125
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -17,11 +19,12 @@ import { RouterLink, useRouter, type RouteLocationRaw } from "vue-router";
 import { getStaffSupabaseClient } from "@/lib/supabase";
 import { getStaffPortalRole, type StaffRole } from "@/lib/staff-auth";
 import StaffAccountsPanel from "@/components/StaffAccountsPanel.vue";
+import PrivilegeGrantsPanel from "@/components/PrivilegeGrantsPanel.vue";
 import RegistrarApplicationsPanel from "@/components/RegistrarApplicationsPanel.vue";
 import CoordinatorSchedulerPanel from "@/components/CoordinatorSchedulerPanel.vue";
 import TeacherSchedulePanel from "@/components/TeacherSchedulePanel.vue";
 import CmsIcon from "@/components/cms/CmsIcon.vue";
-import { cmsPreviewEnabled } from "@/lib/cms/config";
+import { cmsDatabaseEnabled, cmsPreviewEnabled } from "@/lib/cms/config";
 import { schedulerViews, type SchedulerNavId, type SchedulerState, type SchedulerStep } from "@/lib/schedule/scheduler-bridge";
 
 const props = defineProps<{ heading: string; role?: StaffRole }>();
@@ -38,7 +41,17 @@ const schedulerToken = ref("");
 const roleLabels: Record<StaffRole, string> = { admin: "Admin", registrar: "Registrar", teacher: "Teacher", academicCoordinator: "Academic Coordinator" };
 // Three kinds of Admin share the admin role: Super Admin (everything), Account Admin (staff
 // accounts and roles) and Content Admin (website content). The database reports which one.
-type AdminAccess = { adminType: "superAdmin" | "accountAdmin" | "contentAdmin"; manageAccounts: boolean; manageStaff?: boolean; manageContent: boolean };
+type TemporaryAccess = { privilege: "manageStaffAccounts" | "manageContent"; expiresAt: string };
+type AdminAccess = {
+  adminType: "superAdmin" | "accountAdmin" | "contentAdmin"; manageAccounts: boolean; manageStaff?: boolean; manageContent: boolean;
+  /** Access lent by a Super Admin until an end date. */
+  temporaryAccess?: TemporaryAccess[];
+};
+const temporaryLabels: Record<TemporaryAccess["privilege"], string> = { manageStaffAccounts: "create staff accounts", manageContent: "manage website content" };
+const temporaryNote = computed(() => (adminAccess.value?.temporaryAccess ?? []).map((entry) =>
+  `You can ${temporaryLabels[entry.privilege]} until ${new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(new Date(entry.expiresAt))}.`).join(" "));
 const adminLabels: Record<AdminAccess["adminType"], string> = { superAdmin: "Super Admin", accountAdmin: "Account Admin", contentAdmin: "Content Admin" };
 const adminAccess = ref<AdminAccess>();
 // The accounts panel also reports account access (undefined until it has checked).
@@ -193,6 +206,7 @@ const navGroups = computed<NavGroup[]>(() => {
       groups.push({ label: "Account management", items: [
         { id: "accounts", label: "Staff accounts", icon: "users", target: "staff-accounts-heading" },
         { id: "create", label: "Create account", icon: "user-plus", target: "create-account-heading" },
+        ...(adminAccess.value?.manageStaff ? [{ id: "temporary-access", label: "Temporary access", icon: "clock", target: "temporary-access-heading" }] : []),
       ] });
     }
     if (canManageContent.value) {
@@ -356,6 +370,7 @@ watch(() => props.role, () => {
             <div class="portal-school-label"><span></span> STO. NIÑO CATHOLIC SCHOOL</div>
             <h1 id="staff-dashboard-heading" tabindex="-1">{{ heading }}</h1>
             <p>{{ intro }}</p>
+            <p v-if="role === 'admin' && temporaryNote" class="portal-temporary" role="status">Temporary access: {{ temporaryNote }}</p>
             <button v-if="role === 'admin' && canManageAccounts" type="button" class="portal-hero-button"
               @click="goTo({ id: 'create', label: 'Create account', icon: 'user-plus', target: 'create-account-heading' })">
               <CmsIcon name="user-plus" :size="18" /> Create account
@@ -371,12 +386,16 @@ watch(() => props.role, () => {
           <div>
             <h2 id="portal-content-title">Website content</h2>
             <p>Manage the school website's news, events, pages and PDF resources in the SNCS content workspace.</p>
-            <p class="portal-content-note">Preview: content changes stay in this browser until the content database is connected.</p>
+            <p v-if="cmsDatabaseEnabled" class="portal-content-note">What you publish appears on the school website right away.</p>
+            <p v-else class="portal-content-note">Preview: content changes stay in this browser until the content database is connected.</p>
           </div>
           <RouterLink class="portal-content-open" :to="{ name: 'content-workspace' }">Open content workspace</RouterLink>
         </section>
         <div v-if="role === 'admin'" v-show="canManageAccounts !== false" class="portal-section">
           <StaffAccountsPanel :can-change-accounts="adminAccess?.manageStaff === true" @access="canManageAccounts = $event" />
+        </div>
+        <div v-if="role === 'admin' && adminAccess?.manageStaff" class="portal-section">
+          <PrivilegeGrantsPanel />
         </div>
         <div v-if="role === 'registrar'" class="portal-section">
           <RegistrarApplicationsPanel :staff-name="staffName" />
@@ -511,6 +530,7 @@ watch(() => props.role, () => {
 .portal-content-card h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
 .portal-content-card p { margin: 0; color: var(--portal-muted); font-size: .9rem; }
 .portal-content-card .portal-content-note { margin-top: .3rem; font-size: .8rem; }
+.portal-hero .portal-temporary { margin: -6px 0 16px; padding: .55rem .8rem; border: 1px solid #e8d7bb; border-radius: 8px; background: #fff8e8; color: #654b23; font-size: .88rem; font-weight: 700; }
 .portal-content-open { display: inline-flex; align-items: center; min-height: 42px; padding: .55rem 1rem; border-radius: 8px; background: var(--red-700); color: #fff; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .portal-content-open:hover { background: var(--red-800); }
 .portal-empty { display: grid; justify-items: center; gap: 8px; padding: 46px 20px 50px; text-align: center; }
