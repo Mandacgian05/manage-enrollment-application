@@ -19,8 +19,12 @@ type StaffAccount = {
   email: string; role: StaffRole; adminType: AdminType | null; status: string;
 };
 
-// Tells the dashboard whether this Admin can manage staff accounts (Super Admin or Account Admin).
-const emit = defineEmits<{ access: [canManageAccounts: boolean] }>();
+// Tells the dashboard whether this Admin can manage staff accounts (Super Admin or Account Admin),
+// and gives it the counts for its summary cards (this page of the staff list; more = there are further pages).
+const emit = defineEmits<{
+  access: [canManageAccounts: boolean];
+  summary: [counts: { total: number; active: number; admins: number; inactive: number; more: boolean }];
+}>();
 // Super Admins also change roles, reset passwords and deactivate; Account Admins only create accounts.
 const props = withDefaults(defineProps<{ canChangeAccounts?: boolean }>(), { canChangeAccounts: true });
 
@@ -73,6 +77,12 @@ async function loadAccounts(nextOffset = offset.value) {
     accounts.value = rows.slice(0, pageSize);
     hasMore.value = rows.length > pageSize;
     offset.value = nextOffset;
+    if (nextOffset === 0) emit("summary", {
+      total: accounts.value.length, more: hasMore.value,
+      active: accounts.value.filter((account) => account.status === "active").length,
+      inactive: accounts.value.filter((account) => account.status !== "active").length,
+      admins: accounts.value.filter((account) => account.role === "admin").length,
+    });
   } catch {
     accounts.value = [];
     listError.value = "Could not load staff accounts.";
