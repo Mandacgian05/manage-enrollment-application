@@ -47,7 +47,7 @@ both types are ordinary environment variables.
 | `TURNSTILE_SITE_KEY` | Yes | Config | Sitekey from the Cloudflare Turnstile widget. The API sends this public value to the browser. |
 | `TURNSTILE_SECRET_KEY` | Yes | Secret | Secret key from the same Turnstile widget. Used only by the server to verify CAPTCHA tokens. |
 | `TURNSTILE_HOSTNAME` | Yes | Config | Exact hostname of the enrollment website, without `https://`, a port, or a path. |
-| `TURNSTILE_DEPLOYMENT_TESTING` | No | Config | Test sites only. `true` lets this deployment's own Vercel addresses (`VERCEL_URL`, `VERCEL_BRANCH_URL`) use Cloudflare's always-pass test keys, so the form also works on the long deployment links. Leave it unset on the school's live project: those addresses would skip the real security check. |
+| `TURNSTILE_DEPLOYMENT_TESTING` | No | Config | Test sites only. `true` lets this deployment's own Vercel addresses (`VERCEL_URL`, `VERCEL_BRANCH_URL`) use Cloudflare's always-pass test keys, so the form also works on the long deployment links. Requires Vercel Authentication (Deployment Protection) on those links, so only signed-in team members reach them. Leave it unset on the school's live project. |
 | `APP_ORIGIN` | Yes | Config | Website origin: scheme + hostname + optional local port, with no trailing slash or `/enrollment`. |
 | `IP_HASH_SECRET` | Yes | Secret | Generate a random value as described below. Minimum 32 characters; used to hash client IP addresses for submission rate limits. |
 

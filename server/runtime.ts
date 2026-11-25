@@ -35,7 +35,8 @@ export function configuredApp(env = process.env, platform: 'server' | 'vercel' =
   }
   // Test sites only: with TURNSTILE_DEPLOYMENT_TESTING=true, this deployment's own Vercel addresses
   // (VERCEL_URL and VERCEL_BRANCH_URL, set by Vercel) use Cloudflare's test keys, so the form works
-  // there too. Never set it on the school's live project: those addresses skip the real check.
+  // there too. Keep Vercel Authentication on for those addresses, so only signed-in team members can
+  // open them. Never set it on the school's live project.
   const testHosts = env.TURNSTILE_DEPLOYMENT_TESTING === 'true'
     ? [env.VERCEL_URL, env.VERCEL_BRANCH_URL].filter((host): host is string => Boolean(host) && host !== origin.host)
     : [];

@@ -100,12 +100,16 @@ describe('Vercel enrollment functions', () => {
       expect((await configFrom(branch, handler).expect(200)).body.siteKey).toBe('1x00000000000000000000AA');
       expect((await configFrom('branch.school.example', handler).expect(200)).body.siteKey).toBe('public-site-key');
 
-      await post(handler).set('Origin', `https://${deployment}`).expect(201);
+      await post(handler).set('Host', deployment).set('Origin', `https://${deployment}`).expect(201);
       expect(verify).toHaveBeenLastCalledWith('1x0000000000000000000000000000000AA', 'example.com', 'valid-token', ip, null);
       await post(handler).expect(201);
       expect(verify).toHaveBeenLastCalledWith('server-only-turnstile-key', 'branch.school.example', 'valid-token', ip);
-      await post(handler).set('Origin', 'https://sncs-other-team.vercel.app').expect(403);
-      await post(handler).set('Origin', `http://${deployment}`).expect(403);
+      verify.mockClear();
+      // A bot sending to the public address while claiming a deployment Origin gets no test keys.
+      await post(handler).set('Origin', `https://${deployment}`).expect(403);
+      await post(handler).set('Host', deployment).set('Origin', 'https://sncs-other-team.vercel.app').expect(403);
+      await post(handler).set('Host', deployment).set('Origin', `http://${deployment}`).expect(403);
+      expect(verify).not.toHaveBeenCalled();
     });
   });
 });

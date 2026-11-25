@@ -24,16 +24,13 @@ export type AppConfig = {
 export type VerifyCaptcha = (token: string, ip: string, test?: boolean) => Promise<boolean>;
 export function createApp(store: EnrollmentStore, verifyCaptcha: VerifyCaptcha, config: AppConfig) {
   const testHosts = new Set(config.testSiteKey ? config.testHosts ?? [] : []);
-  // The address the visitor opened: from the Origin header on submissions, else the Host header.
+  // Test keys only for requests that actually arrived at a deployment address (the Host header).
+  // On Vercel those addresses sit behind Vercel Authentication, so only signed-in team members reach
+  // them; bots cannot. A claimed Origin alone is never enough: it must match that same address.
   const testRequest = (req: Request) => {
+    const host = req.get('host') ?? '';
     const origin = req.get('origin');
-    if (origin) {
-      try {
-        const url = new URL(origin);
-        return url.protocol === 'https:' && url.origin === origin && testHosts.has(url.host);
-      } catch { return false; }
-    }
-    return testHosts.has(req.get('host') ?? '');
+    return testHosts.has(host) && (!origin || origin === `https://${host}`);
   };
   const app = express();
   app.disable('x-powered-by');
