@@ -15,21 +15,36 @@ export interface EnrollmentStore {
 export class SubmissionError extends Error {
   constructor(public code: 'closed' | 'rate_limit' | 'conflict') { super(code); }
 }
-export type AppConfig = { siteKey: string; ipHashSecret: string; allowedOrigin: string; trustProxy?: string[]; clientIp?: (req: Request) => string };
-export function createApp(store: EnrollmentStore, verifyCaptcha: (token: string, ip: string) => Promise<boolean>, config: AppConfig) {
+export type AppConfig = {
+  siteKey: string; ipHashSecret: string; allowedOrigin: string; trustProxy?: string[]; clientIp?: (req: Request) => string;
+  /** Test-only addresses (a deployment's own Vercel URLs) that use Cloudflare's test keys instead of the real check. */
+  testHosts?: string[]; testSiteKey?: string;
+};
+/** test is true when the form came from one of config.testHosts and must be checked with the test secret. */
+export type VerifyCaptcha = (token: string, ip: string, test?: boolean) => Promise<boolean>;
+export function createApp(store: EnrollmentStore, verifyCaptcha: VerifyCaptcha, config: AppConfig) {
+  const testHosts = new Set(config.testSiteKey ? config.testHosts ?? [] : []);
+  // Test keys only for requests that actually arrived at a deployment address (the Host header).
+  // On Vercel those addresses sit behind Vercel Authentication, so only signed-in team members reach
+  // them; bots cannot. A claimed Origin alone is never enough: it must match that same address.
+  const testRequest = (req: Request) => {
+    const host = req.get('host') ?? '';
+    const origin = req.get('origin');
+    return testHosts.has(host) && (!origin || origin === `https://${host}`);
+  };
   const app = express();
   app.disable('x-powered-by');
   // Only named, trusted proxy addresses may supply a forwarded client address.
   app.set('trust proxy', config.trustProxy ?? false);
   app.use('/api', (_req: Request, res: Response, next: NextFunction) => { res.set('Cache-Control', 'no-store'); next(); });
   const parseForm = multer({ limits: { files: 0, fields: 3, fieldSize: 32 * 1024, parts: 3 } }).none();
-  app.get('/api/enrollment/config', async (_req: Request, res: Response) => {
+  app.get('/api/enrollment/config', async (req: Request, res: Response) => {
     res.locals.enrollmentStage = 'period';
     const period = await store.period();
-    res.json({ ...period, siteKey: config.siteKey });
+    res.json({ ...period, siteKey: testRequest(req) ? config.testSiteKey : config.siteKey });
   });
   app.post('/api/enrollment/applications', (req: Request, res: Response, next: NextFunction) => {
-    if (req.get('origin') && req.get('origin') !== config.allowedOrigin) {
+    if (req.get('origin') && req.get('origin') !== config.allowedOrigin && !testRequest(req)) {
       res.status(403).json({ message: 'Submission is not allowed from this site.' }); return;
     }
     next();
@@ -55,7 +70,9 @@ export function createApp(store: EnrollmentStore, verifyCaptcha: (token: string,
     res.locals.enrollmentStage = 'client_ip';
     const ip = ipaddr.process(config.clientIp ? config.clientIp(req) : req.ip ?? req.socket.remoteAddress ?? '127.0.0.1').toNormalizedString();
     res.locals.enrollmentStage = 'captcha';
-    if (typeof token !== 'string' || !token || token.length > 2048 || !await verifyCaptcha(token, ip)) {
+    const passed = typeof token === 'string' && token.length > 0 && token.length <= 2048
+      && await (testRequest(req) ? verifyCaptcha(token, ip, true) : verifyCaptcha(token, ip));
+    if (!passed) {
       res.status(422).json({ message: 'Please complete the security check again.', errors: { captcha: 'Security check failed or expired.' } }); return;
     }
     let receipt: Receipt;

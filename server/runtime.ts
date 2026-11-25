@@ -3,6 +3,7 @@ import ipaddr from 'ipaddr.js';
 import { createApp } from './app.js';
 import { supabaseStore } from './supabase.js';
 import { verifyTurnstile } from './turnstile.js';
+import { TEST_HOSTNAME, TEST_SECRET_KEY, TEST_SITE_KEY } from './turnstile-test-keys.js';
 
 export class ConfigurationError extends Error {}
 
@@ -32,9 +33,17 @@ export function configuredApp(env = process.env, platform: 'server' | 'vercel' =
   if (!['https:', 'http:'].includes(origin.protocol) || origin.origin !== allowedOrigin || origin.hostname !== hostname) {
     throw new ConfigurationError('APP_ORIGIN must contain only the scheme and TURNSTILE_HOSTNAME, with an optional port');
   }
+  // Test sites only: with TURNSTILE_DEPLOYMENT_TESTING=true, this deployment's own Vercel addresses
+  // (VERCEL_URL and VERCEL_BRANCH_URL, set by Vercel) use Cloudflare's test keys, so the form works
+  // there too. Keep Vercel Authentication on for those addresses, so only signed-in team members can
+  // open them. Never set it on the school's live project.
+  const testHosts = env.TURNSTILE_DEPLOYMENT_TESTING === 'true'
+    ? [env.VERCEL_URL, env.VERCEL_BRANCH_URL].filter((host): host is string => Boolean(host) && host !== origin.host)
+    : [];
   return createApp(supabaseStore(required(env, 'SUPABASE_URL'), env.SUPABASE_SECRET_KEY || required(env, 'SUPABASE_SERVICE_ROLE_KEY'), env.DATABASE_URL, env.DATABASE_SSL_CA),
-    (token, ip) => verifyTurnstile(secret, hostname, token, ip), {
+    (token, ip, test) => test ? verifyTurnstile(TEST_SECRET_KEY, TEST_HOSTNAME, token, ip, null) : verifyTurnstile(secret, hostname, token, ip), {
       siteKey: required(env, 'TURNSTILE_SITE_KEY'), ipHashSecret, allowedOrigin,
+      testHosts, testSiteKey: testHosts.length ? TEST_SITE_KEY : undefined,
       trustProxy: platform === 'server' ? env.TRUSTED_PROXIES?.split(',').map(value => value.trim()).filter(Boolean) : undefined,
       clientIp: platform === 'vercel' ? vercelClientIp : undefined,
     });
