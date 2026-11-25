@@ -78,4 +78,34 @@ describe('Vercel enrollment functions', () => {
     await request(createVercelHandler()).get('/api/enrollment/config').expect(503);
     expect(store.period).not.toHaveBeenCalled();
   });
+  describe('deployment addresses on a test site', () => {
+    const deployment = 'sncs-abc123-team.vercel.app';
+    const branch = 'sncs-git-main-team.vercel.app';
+    const configFrom = (host: string, handler = createVercelHandler()) =>
+      request(handler).get('/api/enrollment/config').set('Host', host);
+
+    it('stays off unless TURNSTILE_DEPLOYMENT_TESTING is true', async () => {
+      vi.stubEnv('VERCEL_URL', deployment);
+      expect((await configFrom(deployment).expect(200)).body.siteKey).toBe('public-site-key');
+      await post().set('Origin', `https://${deployment}`).expect(403);
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("uses Cloudflare's test keys on the deployment's own addresses only", async () => {
+      vi.stubEnv('TURNSTILE_DEPLOYMENT_TESTING', 'true');
+      vi.stubEnv('VERCEL_URL', deployment);
+      vi.stubEnv('VERCEL_BRANCH_URL', branch);
+      const handler = createVercelHandler();
+      expect((await configFrom(deployment, handler).expect(200)).body.siteKey).toBe('1x00000000000000000000AA');
+      expect((await configFrom(branch, handler).expect(200)).body.siteKey).toBe('1x00000000000000000000AA');
+      expect((await configFrom('branch.school.example', handler).expect(200)).body.siteKey).toBe('public-site-key');
+
+      await post(handler).set('Origin', `https://${deployment}`).expect(201);
+      expect(verify).toHaveBeenLastCalledWith('1x0000000000000000000000000000000AA', 'example.com', 'valid-token', ip, null);
+      await post(handler).expect(201);
+      expect(verify).toHaveBeenLastCalledWith('server-only-turnstile-key', 'branch.school.example', 'valid-token', ip);
+      await post(handler).set('Origin', 'https://sncs-other-team.vercel.app').expect(403);
+      await post(handler).set('Origin', `http://${deployment}`).expect(403);
+    });
+  });
 });
